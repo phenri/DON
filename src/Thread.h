@@ -1,44 +1,24 @@
-#ifndef THREAD_H_
-#define THREAD_H_
+#ifdef _MSC_VER
+#   pragma once
+#endif
 
-//#include <string>
-//#include <vector>
+#ifndef _THREAD_H_INC_
+#define _THREAD_H_INC_
 
+#include <bitset>
+#include <vector>
+
+#include "Position.h"
 #include "Pawns.h"
 #include "Material.h"
 #include "MovePicker.h"
 #include "Searcher.h"
 
-const int32_t MAX_THREADS             = 64; // Because SplitPoint::slaves_mask is a uint64_t
-const int32_t MAX_THREADS_SPLIT_POINT = 8;  // Maximum threads per split point
-const int32_t MAX_SPLIT_DEPTH         = 15; // Maximum split depth
+// Windows or MinGW
+#if defined(_WIN32) || defined(_MSC_VER) || defined(__CYGWIN__) || defined(__MINGW32__) || defined(__MINGW64__) || defined(__BORLANDC__)
 
-#ifndef _WIN32 // Linux - Unix
-
-#   include <pthread.h>
-
-typedef pthread_mutex_t Lock;
-typedef pthread_cond_t WaitCondition;
-typedef pthread_t NativeHandle;
-typedef void*(*pt_start_fn)(void*);
-
-#   define lock_init(x)     pthread_mutex_init(&(x), NULL)
-#   define lock_grab(x)     pthread_mutex_lock(&(x))
-#   define lock_release(x)  pthread_mutex_unlock(&(x))
-#   define lock_destroy(x)  pthread_mutex_destroy(&(x))
-#   define cond_destroy(x)  pthread_cond_destroy(&(x))
-#   define cond_init(x)     pthread_cond_init(&(x), NULL)
-#   define cond_signal(x)   pthread_cond_signal(&(x))
-#   define cond_wait(x,y)   pthread_cond_wait(&(x),&(y))
-#   define cond_timedwait(x,y,z)    pthread_cond_timedwait(&(x),&(y),z)
-#   define thread_create(x,f,t)     pthread_create(&(x),NULL,(pt_start_fn)f,t)
-#   define thread_join(x)   pthread_join(x, NULL)
-
-#else // Windows and MinGW
-
-// disable macros min() and max()
 #   ifndef  NOMINMAX
-#       define NOMINMAX
+#       define NOMINMAX // disable macros min() and max()
 #   endif
 #   ifndef  WIN32_LEAN_AND_MEAN
 #       define WIN32_LEAN_AND_MEAN
@@ -46,244 +26,304 @@ typedef void*(*pt_start_fn)(void*);
 
 #   include <windows.h>
 
+#   undef WIN32_LEAN_AND_MEAN
+#   undef NOMINMAX
+
+
 // We use critical sections on Windows to support Windows XP and older versions,
 // unfortunatly cond_wait() is racy between lock_release() and WaitForSingleObject()
 // but apart from this they have the same speed performance of SRW locks.
-typedef CRITICAL_SECTION Lock;
-typedef HANDLE WaitCondition;
-typedef HANDLE NativeHandle;
+typedef CRITICAL_SECTION    Lock;
+typedef HANDLE              WaitCondition;
+typedef HANDLE              Handle;
 
 // On Windows 95 and 98 parameter lpThreadId my not be null
 inline DWORD* dwWin9xKludge () { static DWORD dw; return &dw; }
 
-#   define lock_init(x)          InitializeCriticalSection (&(x))
+#   define lock_create(x)        InitializeCriticalSection (&(x))
 #   define lock_grab(x)          EnterCriticalSection (&(x))
 #   define lock_release(x)       LeaveCriticalSection (&(x))
 #   define lock_destroy(x)       DeleteCriticalSection (&(x))
-#   define cond_init(x)          { x = CreateEvent (0, FALSE, FALSE, 0); }
-#   define cond_destroy(x)       CloseHandle (x)
-#   define cond_signal(x)        SetEvent (x)
-#   define cond_wait(x,y)        { lock_release (y); WaitForSingleObject (x, INFINITE); lock_grab (y); }
-#   define cond_timedwait(x,y,z) { lock_release (y); WaitForSingleObject (x, z); lock_grab (y); }
-#   define thread_create(x,f,t)  (x = CreateThread (NULL, 0, (LPTHREAD_START_ROUTINE)f, t, 0, dwWin9xKludge ()))
-#   define thread_join(x)        { WaitForSingleObject (x, INFINITE); CloseHandle (x); }
+#   define cond_create(h)        h = CreateEvent (NULL, FALSE, FALSE, NULL);
+#   define cond_destroy(h)       CloseHandle (h)
+#   define cond_signal(h)        SetEvent (h)
+#   define cond_wait(c,l)        { lock_release (l); WaitForSingleObject (c, INFINITE); lock_grab (l); }
+#   define cond_timedwait(c,l,t) { lock_release (l); WaitForSingleObject (c, t); lock_grab (l); }
+#   define thread_create(h,f,t)  h = CreateThread (NULL, 0, LPTHREAD_START_ROUTINE (f), t, 0, dwWin9xKludge ())
+#   define thread_join(h)        { WaitForSingleObject (h, INFINITE); CloseHandle (h); }
+
+#else    // Linux - Unix
+
+#   include <pthread.h>
+#   include <unistd.h>  // for sysconf()
+
+typedef pthread_mutex_t     Lock;
+typedef pthread_cond_t      WaitCondition;
+typedef pthread_t           Handle;
+typedef void* (*StartRoutine) (void*);
+
+#   define lock_create(x)        pthread_mutex_init (&(x), NULL)
+#   define lock_grab(x)          pthread_mutex_lock (&(x))
+#   define lock_release(x)       pthread_mutex_unlock (&(x))
+#   define lock_destroy(x)       pthread_mutex_destroy (&(x))
+#   define cond_create(h)        pthread_cond_init (&(h), NULL)
+#   define cond_destroy(h)       pthread_cond_destroy (&(h))
+#   define cond_signal(h)        pthread_cond_signal (&(h))
+#   define cond_wait(c,l)        pthread_cond_wait (&(c), &(l))
+#   define cond_timedwait(c,l,t) pthread_cond_timedwait (&(c), &(l), t)
+#   define thread_create(h,f,t)  pthread_create (&(h), NULL, StartRoutine (f), t)
+#   define thread_join(h)        pthread_join (h, NULL)
 
 #endif
 
-extern void timed_wait (WaitCondition &sleep_cond, Lock &sleep_lock, int32_t msec);
+namespace Threads {
 
+    using namespace Searcher;
 
-struct Mutex
-{
-private:
-    friend struct ConditionVariable;
+    const u08   MAX_THREADS            = 128; // Maximum threads
+    const u08   MAX_SPLITPOINT_THREADS =   8; // Maximum threads per splitpoint
+    const u08   MAX_SPLIT_DEPTH        =  15; // Maximum split depth
 
-    Lock l;
+    struct Mutex
+    {
+    private:
+        Lock _lock;
+        
+        friend struct Condition;
 
-public:
-    Mutex()         { lock_init (l); }
-    ~Mutex()        { lock_destroy (l); }
+    public:
+        Mutex () { lock_create (_lock); }
+       ~Mutex () { lock_destroy (_lock); }
 
-    void lock()     { lock_grab (l); }
-    void unlock()   { lock_release (l); }
-};
+        void   lock () { lock_grab (_lock); }
+        void unlock () { lock_release (_lock); }
+    };
 
-struct ConditionVariable
-{
-    ConditionVariable()     { cond_init (c); }
-    ~ConditionVariable()    { cond_destroy (c); }
+    // cond_timed_wait() waits for msec milliseconds. It is mainly an helper to wrap
+    // conversion from milliseconds to struct timespec, as used by pthreads.
+    inline void cond_timed_wait (WaitCondition &sleep_cond, Lock &sleep_lock, i32 msec)
+    {
 
-    void wait(Mutex &m)     { cond_wait (c, m.l); }
-    void wait_for(Mutex &m, int32_t ms) { timed_wait (c, m.l, ms); }
-    void notify_one ()      { cond_signal (c); }
+#if defined(_WIN32) || defined(_MSC_VER) || defined(__CYGWIN__) || defined(__MINGW32__) || defined(__MINGW64__) || defined(__BORLANDC__)
 
-private:
-    WaitCondition c;
-};
+        i32 tm = msec;
 
-struct Thread;
+#else    // Linux - Unix
 
-struct SplitPoint
-{
-    // Const data after split point has been setup
-    const Position         *pos;
-    const Searcher::Stack  *ss;
-    Thread                 *master_thread;
-    Depth                   depth;
-    Value                   beta;
-    Searcher::NodeT         node_type;
-    bool                    cut_node;
+        timespec ts
+            ,   *tm = &ts;
+        u64 ms = Time::now() + msec;
 
-    // Const pointers to shared data
-    MovePicker             *move_picker;
-    SplitPoint             *parent_split_point;
+        ts.tv_sec = ms / Time::M_SEC;
+        ts.tv_nsec = (ms % Time::M_SEC) * 1000000LL;
 
-    // Shared data
-    Mutex                   mutex;
-    volatile uint64_t       slaves_mask;
-    volatile uint64_t       nodes;
-    volatile Value          alpha;
-    volatile Value          best_value;
-    volatile Move           best_move;
-    volatile int32_t        moves_count;
-    volatile bool           cut_off;
-};
-
-// ThreadBase struct is the base of the hierarchy from where
-// we derive all the specialized thread classes.
-struct ThreadBase
-{
-    Mutex               mutex;
-    ConditionVariable   sleep_condition;
-    NativeHandle        handle;
-    volatile bool       exit;
-
-    ThreadBase()
-        : exit(false) {}
-
-    virtual ~ThreadBase () {}
-
-    virtual void idle_loop () = 0;
-
-    void notify_one ();
-    void wait_for (volatile const bool &b);
-};
-
-// Thread struct keeps together all the thread related stuff like locks, state
-// and especially split points. We also use per-thread pawn and material hash
-// tables so that once we get a pointer to an entry its life time is unlimited
-// and we don't have to care about someone changing the entry under our feet.
-struct Thread
-    : public ThreadBase
-{
-    SplitPoint           split_points[MAX_THREADS_SPLIT_POINT];
-    Material::Table      material_table;
-    Pawns   ::Table      pawns_table;
-    EndGame ::Endgames   endgames;
-
-    Position            *active_pos;
-    
-    uint8_t              idx;
-    uint8_t              max_ply;
-
-    SplitPoint* volatile active_split_point;
-    volatile uint8_t     threads_split_point;
-    volatile bool        searching;
-
-    Thread ();
-
-    virtual void idle_loop ();
-
-    bool cutoff_occurred () const;
-    
-    bool available_to (const Thread *master) const;
-
-    template <bool FAKE>
-    void split (Position &pos, const Searcher::Stack ss[], Value alpha, Value beta, Value &best_value, Move &best_move,
-        Depth depth, int32_t moves_count, MovePicker *move_picker, Searcher::NodeT node_type, bool cut_node);
-
-};
-
-// MainThread and TimerThread are derived classes used to characterize the two
-// special threads: the main one and the recurring timer.
-struct MainThread
-    : public Thread
-{
-    volatile bool thinking;
-
-    MainThread()
-        : thinking (true) {} // Avoid a race with start_thinking()
-
-    virtual void idle_loop ();
-
-};
-
-struct TimerThread
-    : public ThreadBase
-{
-    // This is the minimum interval in msec between two check_time() calls
-    static const int32_t Resolution = 5;
-
-    bool run;
-
-    TimerThread()
-        : run(false) {}
-
-    virtual void idle_loop ();
-
-};
-
-// ThreadPool struct handles all the threads related stuff like init, starting,
-// parking and, the most important, launching a slave thread at a split point.
-// All the access to shared thread data is done through this class.
-struct ThreadPool
-    : public std::vector<Thread*>
-{
-    bool                sleep_idle;
-    Depth               split_depth;
-    uint8_t             threads_split_point;
-    Mutex               mutex;
-    ConditionVariable   sleep_condition;
-    TimerThread        *timer;
-
-    // No c'tor and d'tor, threads rely on globals that should
-    // be initialized and valid during the whole thread lifetime.
-    void   initialize (); 
-    void deinitialize (); 
-
-    MainThread* main () { return static_cast<MainThread*> ((*this)[0]); }
-
-    void read_uci_options();
-
-    Thread* available_slave (const Thread *master) const;
-
-    void start_thinking (const Position &pos, const Searcher::LimitsT &limit, StateInfoStackPtr &states);
-
-    void wait_for_think_finished ();
-};
-
-// timed_wait() waits for msec milliseconds. It is mainly an helper to wrap
-// conversion from milliseconds to struct timespec, as used by pthreads.
-inline void timed_wait (WaitCondition &sleep_cond, Lock &sleep_lock, int32_t msec)
-{
-#ifdef _WIN32
-    int32_t tm = msec;
-#else
-    timespec ts, *tm = &ts;
-    uint64_t ms = Time::now() + msec;
-
-    ts.tv_sec = ms / 1000;
-    ts.tv_nsec = (ms % 1000) * 1000000LL;
 #endif
 
-    cond_timedwait (sleep_cond, sleep_lock, tm);
+        cond_timedwait (sleep_cond, sleep_lock, tm);
+
+    }
+
+    struct Condition
+    {
+    private:
+        WaitCondition _condition;
+
+    public:
+        Condition () { cond_create  (_condition); }
+       ~Condition () { cond_destroy (_condition); }
+
+        void wait (Mutex &mutex) { cond_wait (_condition, mutex._lock); }
+
+        void wait_for (Mutex &mutex, i32 ms) { cond_timed_wait (_condition, mutex._lock, ms); }
+
+        void notify_one () { cond_signal (_condition); }
+
+    };
+
+
+    class Thread;
+
+    // SplitPoint struct
+    struct SplitPoint
+    {
+
+    public:
+        // Const data after splitpoint has been setup
+        const Stack    *ss;
+        const Position *pos;
+
+        Thread *master;
+        Value   beta;
+        Depth   depth;
+        NodeT   node_type;
+        bool    cut_node;
+        Mutex   mutex;
+
+        // Const pointers to shared data
+        MovePicker  *movepicker;
+        SplitPoint  *parent_splitpoint;
+
+        // Shared data
+        std::bitset<MAX_THREADS> slaves_mask;
+        volatile u08   moves_count;
+        volatile Value alpha;
+        volatile Value best_value;
+        volatile Move  best_move;
+        volatile u64   nodes;
+        volatile bool  cut_off;
+    };
+
+    // ThreadBase class is the base of the hierarchy from where
+    // we derive all the specialized thread classes.
+    class ThreadBase
+    {
+    protected:
+        Condition     sleep_condition;
+        volatile bool  exit;
+
+    public:
+        Mutex   mutex;
+        Handle  native_handle;
+
+        ThreadBase ()
+            : exit (false)
+            , native_handle (Handle ())
+        {}
+
+        virtual ~ThreadBase () {}
+
+        void stop () { exit = true; }
+        void notify_one ();
+
+        void wait_for (const volatile bool &condition);
+
+        virtual void idle_loop () = 0;
+    };
+
+    // TimerThread is derived from ThreadBase class
+    // It's used for special purpose: the recurring timer.
+    class TimerThread
+        : public ThreadBase
+    {
+    private:
+        bool run;
+
+    public:
+        // This is the minimum interval in msec between two check_time() calls
+        static const i32 Resolution = 5;
+
+        TimerThread () : run (false) {}
+
+        void start () { run = true ; }
+        void stop  () { run = false; }
+        bool running () const { return run; }
+
+        virtual void idle_loop ();
+
+    };
+
+    // Thread is derived from ThreadBase class
+    // Thread class keeps together all the thread related stuff like locks, state
+    // and especially splitpoints. We also use per-thread pawn-hash and material-hash tables
+    // so that once get a pointer to a thread entry its life time is unlimited
+    // and we don't have to care about someone changing the entry under our feet.
+    class Thread
+        : public ThreadBase
+    {
+
+    public:
+        SplitPoint splitpoints[MAX_SPLITPOINT_THREADS];
+        
+        Material::Table  material_table;
+        Pawns   ::Table  pawns_table;
+
+        Position        *active_pos;
+
+        u08              idx
+            ,            max_ply;
+
+        SplitPoint* volatile active_splitpoint;
+        volatile    u08      splitpoint_threads;
+        volatile    bool     searching;
+
+        Thread ();
+
+        virtual void idle_loop ();
+
+        bool cutoff_occurred () const;
+
+        bool available_to (const Thread *master) const;
+
+        template <bool FAKE>
+        void split (Position &pos, const Stack *ss, Value alpha, Value beta, Value &best_value, Move &best_move,
+            Depth depth, u08 moves_count, MovePicker &movepicker, NodeT node_type, bool cut_node);
+
+    };
+
+    // MainThread is derived from Thread
+    // It's used for special purpose: the main thread.
+    class MainThread
+        : public Thread
+    {
+
+    public:
+        volatile bool thinking;
+
+        MainThread () : thinking (true) {} // Avoid a race with start_thinking ()
+
+        virtual void idle_loop ();
+
+    };
+
+    // ThreadPool class handles all the threads related stuff like initializing,
+    // starting, parking and, the most important, launching a slave thread
+    // at a splitpoint.
+    // All the access to shared thread data is done through this class.
+    class ThreadPool
+        : public std::vector<Thread*>
+    {
+
+    public:
+        bool    idle_sleep;
+        Depth   split_depth;
+        Mutex   mutex;
+
+        Condition   sleep_condition;
+        
+        TimerThread *timer;
+        MainThread* main () { return static_cast<MainThread*> ((*this)[0]); }
+
+        // No c'tor and d'tor, threads rely on globals that should
+        // be initialized and valid during the whole thread lifetime.
+        void   initialize ();
+        void deinitialize ();
+
+        void configure ();
+
+        Thread* available_slave (const Thread *master) const;
+
+        void start_thinking (const Position &pos, const LimitsT &limit, StateInfoStackPtr &states);
+
+        void wait_for_think_finished ();
+
+    };
+
 }
 
-#if __cplusplus > 199711L
-#   include<thread>
-#endif
-
-inline int32_t cpu_count ()
+inline u32 cpu_count ()
 {
-
-#if __cplusplus > 199711L
-    // May return 0 when not able to detect
-    return std::thread::hardware_concurrency ();
-
-#else    
-
-#   if defined(WIN32)
+#ifdef WIN32
 
     SYSTEM_INFO sys_info;
     GetSystemInfo (&sys_info);
     return sys_info.dwNumberOfProcessors;
 
-#   elif defined(MACOS)
+#elif MACOS
 
-    uint32_t count;
-    uint32_t len = sizeof (count);
+    u32 count;
+    u32 len = sizeof (count);
 
-    int32_t nm[2];
+    i32 nm[2];
     nm[0] = CTL_HW;
     nm[1] = HW_AVAILCPU;
     sysctl (nm, 2, &count, &len, NULL, 0);
@@ -295,113 +335,50 @@ inline int32_t cpu_count ()
     }
     return count;
 
-#   elif defined(_SC_NPROCESSORS_ONLN) // LINUX, SOLARIS, & AIX and Mac OS X (for all OS releases >= 10.4)
+#elif _SC_NPROCESSORS_ONLN // LINUX, SOLARIS, & AIX and Mac OS X (for all OS releases >= 10.4)
 
     return sysconf (_SC_NPROCESSORS_ONLN);
 
-#   elif defined(__HPUX)
-
-    pst_dynamic psd;
-    return (pstat_getdynamic (&psd, sizeof (psd), 1, 0) == -1) ?
-        1 : psd.psd_proc_cnt;
-
-    //return mpctl (MPC_GETNUMSPUS, NULL, NULL);
-
-#   elif defined(__IRIX)
+#elif __IRIX
 
     return sysconf (_SC_NPROC_ONLN);
 
-#   else
+#elif __HPUX
+
+    pst_dynamic psd;
+    return (pstat_getdynamic (&psd, sizeof (psd), 1, 0) == -1)
+        ? 1 : psd.psd_proc_cnt;
+
+    //return mpctl (MPC_GETNUMSPUS, NULL, NULL);
+
+#else
 
     return 1;
 
-#   endif
-
 #endif
-
 }
 
-
-typedef enum SyncCout { IO_LOCK, IO_UNLOCK } SyncCout;
-
-// Used to serialize access to std::cout to avoid multiple threads writing at the same time.
-inline std::ostream& operator<< (std::ostream& os, const SyncCout &sc)
-{
-    static Mutex m;
-
-    if      (IO_LOCK == sc)
-        m.lock ();
-    else if (IO_UNLOCK == sc)
-        m.unlock ();
-    return os;
-}
+enum SyncT { IO_LOCK, IO_UNLOCK };
 
 #define sync_cout std::cout << IO_LOCK
 #define sync_endl std::endl << IO_UNLOCK
 
-extern ThreadPool Threads;
+// Used to serialize access to std::cout to avoid multiple threads writing at the same time.
+inline std::ostream& operator<< (std::ostream &os, const SyncT &sync)
+{
+    static Threads::Mutex mutex;
 
-extern void prefetch (char *addr);
+    if      (sync == IO_LOCK)
+    {
+        mutex.lock ();
+    }
+    else if (sync == IO_UNLOCK)
+    {
+        mutex.unlock ();
+    }
+    return os;
+}
 
-//inline void cpu_id (uint32_t regs[4], int32_t i)
-//{
-//#ifdef _WIN32
-//
-//    __cpuid ((int32_t *) regs, i);
-//
-//#else
-//
-//    asm volatile
-//        ("cpuid" : "=a" (regs[0]), "=b" (regs[1]), "=c" (regs[2]), "=d" (regs[3])
-//        : "a" (i), "c" (0));
-//    // ECX is set to zero for CPUID function 4
-//#endif
-//}
-//
-//inline std::string cpu_feature ()
-//{
-//    uint32_t regs[4];
-//
-//    // Get vendor
-//    char vendor[12];
-//    cpu_id (regs, 0);
-//    ((int32_t *)vendor)[0] = regs[1]; // EBX
-//    ((int32_t *)vendor)[1] = regs[3]; // EDX
-//    ((int32_t *)vendor)[2] = regs[2]; // ECX
-//    std::string cpu_vendor = std::string (vendor);
-//
-//    std::ostringstream ss;
-//
-//    cpu_id (regs, 1);
-//    // Get CPU features
-//    uint32_t cpuFeatures = regs[3]; // EDX
-//    // Logical core count per CPU
-//    uint32_t logical = (regs[1] >> 16) & 0xff; // EBX[23:16]
-//    ss << " logical cpus: " << logical << std::endl;
-//    uint32_t cores = logical;
-//
-//    if (cpu_vendor == "GenuineIntel")
-//    {
-//        // Get DCP cache info
-//        cpu_id (regs, 2);
-//        cores = ((regs[0] >> 26) & 0x3f) + 1; // EAX[31:26] + 1
-//    } 
-//    else if (cpu_vendor == "AuthenticAMD")
-//    {
-//        // Get NC: Number of CPU cores - 1
-//        cpu_id (regs, 0x80000008);
-//        cores = ((uint32_t)(regs[2] & 0xff)) + 1; // ECX[7:0] + 1
-//    }
-//
-//    ss << "    cpu cores: " << cores << std::endl;
-//
-//    // Detect hyper-threads  
-//    bool hyper_threads = cpuFeatures & (1 << 28) && cores < logical;
-//
-//    ss << "hyper-threads: " << std::boolalpha <<  hyper_threads << std::endl;
-//
-//    return ss.str ();
-//}
+extern Threads::ThreadPool  Threadpool;
 
-
-#endif // THREAD_H_
+#endif // _THREAD_H_INC_

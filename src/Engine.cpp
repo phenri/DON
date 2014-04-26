@@ -10,14 +10,12 @@
 #include "Evaluator.h"
 #include "Searcher.h"
 #include "Transposition.h"
-#include "UCI.h"
-#include "DebugLogger.h"
-//#include <thread>
+#include "TB_Syzygy.h"
+#include "Debugger.h"
 #include "Thread.h"
-
-#ifndef NDEBUG
-#   include "Tester.h"
-#endif
+#include "UCI.h"
+#include "Notation.h"
+#include "Tester.h"
 
 namespace Engine {
 
@@ -29,7 +27,7 @@ namespace Engine {
 
         // Version number.
         // If Version is left empty, then compile date in the format DD-MM-YY.
-        const string Version   = "1.0b";
+        const string Version   = "";
         const string Author    = "Ehsan Rashid";
 
         const string Months ("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec");
@@ -38,62 +36,77 @@ namespace Engine {
 
     string info (bool uci)
     {
-        ostringstream ss;
+        ostringstream oss;
 
-        if (uci) ss << "id name ";
-        ss << Name << " ";
+        if (uci) oss << "id name ";
+        oss << Name << " ";
 
+#if defined (VERSION)
+        oss << VERSION << setfill ('0');
+#else
         if (Version.empty ())
         {
             // From compiler, format is "Sep 2 2013"
-            stringstream date (__DATE__);
-            string
-                month,
-                day,
-                year;
+            istringstream iss (__DATE__);
 
-            date 
-                >> month
+            string month
+                ,  day
+                ,  year;
+
+            iss >> month
                 >> day
                 >> year;
 
-            ss  << setfill ('0')
-                << setw (2) << day //<< '-'
+            oss << setfill ('0')
+                << setw (2) << (day) //<< '-'
                 << setw (2) << (Months.find (month) / 4 + 1) //<< '-'
-                << setw (2) << year.substr (2);
+                << setw (2) << (year.substr (2));
         }
         else
         {
-            ss << Version;
+            oss << Version << setfill ('0');
         }
-
-#ifdef _64BIT
-        ss << " x64";
-#else
-        ss << " w32";
 #endif
 
-        //#ifdef POPCNT
-        //        ss << " SSE4.2";
-        //#endif
+#ifdef _64BIT
+        oss << " x64";
+#else
+        oss << " w32";
+#endif
 
-        ss  << "\n" 
-            << ((uci) ? "id author " : "(c) 2014 ")
-            << Author << "\n";
+#ifdef BM2
+        oss << "-BM2";
+#endif
+#ifdef ABM
+        oss << "-ABM";
+#endif
+#ifdef LPAGES
+        oss << "-LP";
+#endif
 
-        return ss.str ();
+        oss << "\n" 
+            << ((uci) ? ("id author " + Author)
+            : (Author + " (c) 2014")) << "\n";
+
+        return oss.str ();
     }
 
     void run (const std::string &args)
     {
         cout << Engine::info (false) << endl;
 
-        cout 
-            << "info string " << cpu_count () << " processor(s) found."
-#ifdef POPCNT
-            << " POPCNT available."
+#ifdef ABM
+        //cout << "info string ABM available." << endl;
 #endif
-            << endl;
+#ifdef BM2
+        //cout << "info string BM2 available." << endl;
+#endif
+#ifdef LPAGES
+        //cout << "info string LARGE PAGES available." << endl;
+        MemoryHandler::initialize ();
+#endif
+
+        cout << "info string Processor(s) found " << cpu_count () << "." << endl;
 
         UCI      ::initialize ();
         BitBoard ::initialize ();
@@ -103,33 +116,25 @@ namespace Engine {
         Searcher ::initialize ();
         Pawns    ::initialize ();
         Evaluator::initialize ();
-        Threads   .initialize ();
+        EndGame  ::initialize ();
+        Threadpool.initialize ();
+        
+        TT.resize (i32 (Options["Hash"]), true);
 
-        cout
-            << "info string " << Threads.size () << " thread(s)." << "\n"
-            << "info string " << TT.size ()      << " MB Hash."   << endl;
+        cout << endl;
 
-#ifndef NDEBUG
-        //Tester::main_test ();
-        //system ("pause");
-        //return;
-#endif
-
-        //log_debug (true);
-
-        UCI   ::start (args);
-
-        //log_debug (false);
+        UCI      ::start (args);
 
     }
 
     // Exit from engine with exit code. (in case of some crash)
-    void exit (int32_t code)
+    void exit (i32 code)
     {
-        UCI   ::stop ();
-        if (Searcher::Book.is_open ()) Searcher::Book.close ();
-        Threads.deinitialize ();
-        UCI   ::deinitialize ();
+        UCI       ::stop ();
+        
+        Threadpool.deinitialize ();
+        EndGame  ::deinitialize ();
+        UCI      ::deinitialize ();
 
         ::exit (code);
     }

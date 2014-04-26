@@ -1,11 +1,15 @@
-//#pragma once
-#ifndef BENCHMARK_H_
-#define BENCHMARK_H_
+#ifdef _MSC_VER
+#   pragma once
+#endif
+
+#ifndef _BENCHMARK_H_INC_
+#define _BENCHMARK_H_INC_
 
 #include <iosfwd>
 
-#include "Position.h"
+class Position;
 
 extern void benchmark (std::istream &is, const Position &pos);
+extern void benchtest (std::istream &is, const Position &pos);
 
-#endif
+#endif // _BENCHMARK_H_INC_

@@ -1,29 +1,24 @@
-//#include <iostream>
-#include "xstring.h"
-
 #include "Engine.h"
-//#include "LeakDetector.h"
 
 using namespace std;
 
 namespace {
 
-    string args_str (int32_t argc, const char* const argv[])
+    string strarg (i32 argc, const char *const *argv)
     {
-        string args = "";
-        for (int32_t i = 1; i < argc; ++i)
+        string args;
+        for (i32 i = 1; i < argc; ++i)
         {
-            args += whitespace (args) ? string (argv[i]) : " " + string (argv[i]);
+            args += string (" ", !args.empty ()) + argv[i];
         }
         return args;
     }
 
 }
 
-int main (int32_t argc, const char* const argv[])
+i32 main (i32 argc, const char *const *argv)
 {
-    string args = args_str (argc, argv);
-
+    string args = strarg (argc, argv);
     Engine::run (args);
 
     //system ("pause");

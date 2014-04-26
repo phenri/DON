@@ -2,11 +2,11 @@
 // Seweryn Habdank-Wojewodzki
 //
 // Distributed under the Boost Software License, Version 1.0.
-// ( copy at http://www.boost.org/LICENSE_1_0.txt )
+// (copy at http://www.boost.org/LICENSE_1_0.txt)
 
 #include "TriLogger.h"
 
-#if !defined(CLEANTLOG)
+#ifndef CLEANTLOG
 
 #   if defined(FTLOG)
 
@@ -25,7 +25,7 @@ namespace TrivialLogger {
 
     namespace implementation {
 
-        typedef class TriLoggerImpl
+        class TriLoggerImpl
         {
 
         public:
@@ -38,7 +38,7 @@ namespace TrivialLogger {
             // pointer to the output stream of the logger
             static ostream *_outstream;
 
-        } TriLoggerImpl;
+        };
 
         // activate logger by default
         bool TriLoggerImpl::_is_active = true;
@@ -48,14 +48,14 @@ namespace TrivialLogger {
 
 
     unique_ptr<implementation::TriLoggerImpl> 
-        TriLogger::_tl_impl (unique_ptr<implementation::TriLoggerImpl> (new implementation::TriLoggerImpl ()));
+        TriLogger::_p_tl_impl (unique_ptr<implementation::TriLoggerImpl> (new implementation::TriLoggerImpl ()));
 
 
     TriLogger::TriLogger ()
     {
-        if (NULL == _tl_impl.get ())
+        if (!_p_tl_impl.get ())
         {
-            TriLogger::_tl_impl.reset (new implementation::TriLoggerImpl ());
+            TriLogger::_p_tl_impl.reset (new implementation::TriLoggerImpl ());
         }
         implementation::init_tri_logger_impl ();
     }
@@ -65,17 +65,17 @@ namespace TrivialLogger {
 
     bool TriLogger::is_active ()
     {
-        return _tl_impl->_is_active;
+        return _p_tl_impl->_is_active;
     }
 
     void TriLogger::activate (bool active)
     {
-        _tl_impl->_is_active = active;
+        _p_tl_impl->_is_active = active;
     }
 
     ostream*& TriLogger::ostream_ptr ()
     {
-        return _tl_impl->_outstream;
+        return _p_tl_impl->_outstream;
     }
 
 #   if defined(OTLOG)
@@ -89,14 +89,14 @@ namespace TrivialLogger {
 
     void implementation::init_tri_logger_impl ()
     { 
-        if (NULL == implementation::TriLoggerImpl::_outstream_ptr.get ())
+        if (!implementation::TriLoggerImpl::_outstream_ptr.get ())
         {
             implementation::TriLoggerImpl::_outstream_ptr.reset (new null_stream ());
         }
         implementation::TriLoggerImpl::_outstream = &cout;
     }
 
-#   elif defined (ETLOG)
+#   elif defined(ETLOG)
 
     // set auto pointer to the null stream
     // reason: cerr can not be created in runtime, so
@@ -107,7 +107,7 @@ namespace TrivialLogger {
 
     void implementation::init_tri_logger_impl ()
     { 
-        if (NULL == implementation::TriLoggerImpl::_outstream_ptr.get ())
+        if (!implementation::TriLoggerImpl::_outstream_ptr.get ())
         {
             implementation::TriLoggerImpl::_outstream_ptr.reset (new null_stream ());
         }
@@ -115,13 +115,12 @@ namespace TrivialLogger {
     }
 
 
-#   elif defined (FTLOG)
+#   elif defined(FTLOG)
 
 #       include <cctype>
 
 #       define XSTR(s) STR(s)
 #       define STR(s) #s
-
 #       define MIN(x1, x2) ((x1) < (x2) ? (x1) : (x2))
 #       define MAX(x1, x2) ((x1) > (x2) ? (x1) : (x2))
 
@@ -132,9 +131,9 @@ namespace TrivialLogger {
         // Function calculates length of C string
         // It can be used with wide characters
         template < typename Char_type >
-        uint32_t const str_len (const Char_type s[])
+        u32 const str_len (const Char_type s[])
         {
-            uint32_t length = 0;
+            u32 length = 0;
             while (*s)
             {
                 ++s;
@@ -148,9 +147,9 @@ namespace TrivialLogger {
         // Additionally coping is stared from the point which
         // points lhs.
         template < typename Char_type >
-        uint32_t const str_cat (Char_type *&lhs, const Char_type *rhs)
+        u32 const str_cat (Char_type *&lhs, const Char_type *rhs)
         {
-            uint32_t length = 0;
+            u32 length = 0;
             while (*rhs)
             {
                 *lhs = *rhs;
@@ -168,9 +167,9 @@ namespace TrivialLogger {
         // so there can be a problem when lhs points on the end of lhs
         // C string.
         template < typename Char_type >
-        uint32_t const str_cpy (Char_type *&lhs, const Char_type *rhs)
+        u32 const str_cpy (Char_type *&lhs, const Char_type *rhs)
         {
-            uint32_t length = 0;
+            u32 length = 0;
             while (*rhs)
             {
                 *lhs = *rhs;
@@ -188,14 +187,14 @@ namespace TrivialLogger {
         // The space sign in file name is converted to the underscore.
         // Lengths of C strings has to be proper.
         template<typename Char_type>
-        const uint32_t
+        const u32
             create_filename (
             Char_type filename[],
             const Char_type log_fn[],
             const Char_type log_ext[],
             const Char_type def_fn[])
         {
-            uint32_t length = 0; 
+            u32 length = 0; 
 
             if (str_len (log_fn) > 1)
             {
@@ -203,7 +202,7 @@ namespace TrivialLogger {
                 {
                     // check if characters have grapnical
                     // reprasentation
-                    if (0 != isgraph (uint8_t (*log_fn)))
+                    if (0 != isgraph (u08 (*log_fn)))
                     {
                         *filename = *log_fn;
                         ++filename;
@@ -241,22 +240,22 @@ namespace TrivialLogger {
         //template<typename T>
         //T const max (T const x1, T const x2) { return (x1 > x2 ? x1 : x2); }
 
-        const char_type* get_log_fn()   { return XSTR(FTLOG); }
-        const char_type* get_def_fn()   { return "except_log"; }
+        const char_type* get_log_fn () { return XSTR (FTLOG); }
+        const char_type* get_def_fn () { return "ExceptLog"; }
         // extension C string
-        const char_type* get_log_ext()  { return ".txt"; }
+        const char_type* get_log_ext() { return ".txt"; }
 
     }
 
     // convert definition of the FTLOG to the C string
-    const char_type *log_fn  = implementation::get_log_fn();
-    const char_type *def_fn  = implementation::get_def_fn();
-    const char_type *log_ext = implementation::get_log_ext();
+    const char_type *Log_fn  = implementation::get_log_fn ();
+    const char_type *Def_fn  = implementation::get_def_fn ();
+    const char_type *Log_ext = implementation::get_log_ext ();
 
     // container for final file name
-    char_type filename[(MAX (sizeof (log_fn), sizeof(def_fn)) + sizeof (log_ext)) / sizeof(char_type)];
+    char_type Filename[(MAX (sizeof (Log_fn), sizeof(Def_fn)) + sizeof (Log_ext)) / sizeof(char_type)];
     // create file name
-    uint32_t const length = implementation::create_filename (filename, implementation::get_log_fn(), implementation::get_log_ext(), implementation::get_def_fn());
+    u32 const Length = implementation::create_filename (Filename, implementation::get_log_fn(), implementation::get_log_ext(), implementation::get_def_fn());
 
 #       undef STR
 #       undef XSTR
@@ -265,15 +264,15 @@ namespace TrivialLogger {
 
     // new file is opened and its destruction is managed by unique_ptr
     unique_ptr<ostream> implementation::TriLoggerImpl::_outstream_ptr =
-        unique_ptr<ostream> (new ofstream (filename, ios_base::out | ios_base::app));
+        unique_ptr<ostream> (new ofstream (Filename, ios_base::out|ios_base::app));
     // set pointer output stream
     ostream *implementation::TriLoggerImpl::_outstream = _outstream_ptr.get ();
 
     void implementation::init_tri_logger_impl ()
     { 
-        if (NULL == implementation::TriLoggerImpl::_outstream_ptr.get ())
+        if (!implementation::TriLoggerImpl::_outstream_ptr.get ())
         {
-            implementation::TriLoggerImpl::_outstream_ptr.reset (new ofstream (filename, ios_base::out | ios_base::app));
+            implementation::TriLoggerImpl::_outstream_ptr.reset (new ofstream (Filename, ios_base::out|ios_base::app));
             // set pointer output stream
             implementation::TriLoggerImpl::_outstream =
                 implementation::TriLoggerImpl::_outstream_ptr.get ();
@@ -293,7 +292,7 @@ namespace TrivialLogger {
 
     void implementation::init_tri_logger_impl ()
     {
-        if (NULL == implementation::TriLoggerImpl::_outstream_ptr.get ())
+        if (!implementation::TriLoggerImpl::_outstream_ptr.get ())
         {
             implementation::TriLoggerImpl::_outstream_ptr.reset (new null_stream ());
             implementation::TriLoggerImpl::_outstream =
@@ -303,15 +302,15 @@ namespace TrivialLogger {
 
 #   endif
 
-    unique_ptr<TriLogger> implementation::tl_ptr (new TriLogger ());
+    unique_ptr<TriLogger> implementation::p_trilog (new TriLogger ());
 
     TriLogger& instance ()
     {
-        if (NULL == implementation::tl_ptr.get ())
+        if (!implementation::p_trilog.get ())
         {
-            implementation::tl_ptr.reset (new TriLogger ());
+            implementation::p_trilog.reset (new TriLogger ());
         }
-        return *(implementation::tl_ptr);
+        return *(implementation::p_trilog);
     }
 
 }

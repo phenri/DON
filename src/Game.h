@@ -1,22 +1,25 @@
-//#pragma once
-#ifndef GAME_H_
-#define GAME_H_
+#ifdef _MSC_VER
+#   pragma once
+#endif
+
+#ifndef _GAME_H_INC_
+#define _GAME_H_INC_
 
 #include <map>
 #include <vector>
 #include "functor.h"
 #include "Position.h"
 
-typedef enum Result : uint8_t
+enum Result : u08
 {
     NO_RES  = 0,
     WIN_W   = 1,
     WIN_B   = 2,
     DRAW    = 3,
 
-} Result;
+};
 
-typedef struct Tag
+struct Tag
 {
 private:
 
@@ -25,9 +28,9 @@ private:
 
 public:
 
-    int8_t index;
+    i08 index;
 
-    Tag (std::string val, int8_t idx)
+    Tag (std::string val, i08 idx)
         : value (val)
         , index (idx)
     {}
@@ -47,21 +50,21 @@ public:
         return os;
     }
 
-} Tag;
+};
 
 
-typedef class Game
+class Game
 {
 public:
 
-    typedef std::map<std::string, Tag, std::string_less_nocase_comparer> TagMap;
+    typedef std::map<std::string, Tag, std::no_case_less_comparer> TagMap;
 
 private:
 
-    TagMap              _map_tag;
+    TagMap              _tag_map;
 
-    std::vector<Move>   _lst_move;
-    StateInfoStack      _stk_state;
+    std::vector<Move>   _move_list;
+    StateInfoStack      _state_stk;
 
     Position   _last_pos;
     Result     _result;
@@ -71,11 +74,9 @@ private:
 public:
 
     Game ();
-    explicit Game (int8_t dummy);
-
-    Game (const          char *text);
+    Game (const        char *text);
     Game (const std::string &text);
-
+    explicit Game (i08 dummy);
     //Game (const Game &game);
     //~Game ();
     //Game& operator= (const Game &game);
@@ -100,7 +101,7 @@ public:
     std::string pgn () const;
     operator std::string () const;
 
-    static bool parse (Game &game, const          char *text);
+    static bool parse (Game &game, const        char *text);
     static bool parse (Game &game, const std::string &text);
 
     template<class charT, class Traits>
@@ -119,7 +120,6 @@ public:
         return is;
     }
 
+};
 
-} Game;
-
-#endif
+#endif // _GAME_H_INC_

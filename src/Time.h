@@ -1,20 +1,26 @@
-//#pragma once
-#ifndef TIME_H_
-#define TIME_H_
+#ifdef _MSC_VER
+#   pragma once
+#endif
+
+#ifndef _TIME_H_INC_
+#define _TIME_H_INC_
 
 #include <iomanip>
 #include <sstream>
 #include <iostream>
+#include <ctime>
 
 #include "Platform.h"
 
-#include <ctime>
+#if defined(_WIN32) || defined(_MSC_VER) || defined(__CYGWIN__) || defined(__MINGW32__) || defined(__MINGW64__) || defined(__BORLANDC__)
 
-#ifdef _WIN32   // WINDOWS
+#   ifdef _MSC_VER
+#       pragma warning (disable: 4996) // Function _ftime() may be unsafe
+#   endif
 
 #   include <sys/timeb.h>
 
-INLINE uint64_t system_time_msec ()
+INLINE u64 system_time_msec ()
 {
     _timeb timebuf;
     _ftime (&timebuf);
@@ -22,11 +28,11 @@ INLINE uint64_t system_time_msec ()
     return ((timebuf.time * 1000LL) + timebuf.millitm);
 }
 
-#else           // LINUX - UNIX
+#else   // LINUX - UNIX
 
 #   include <sys/time.h>
 
-INLINE uint64_t system_time_msec ()
+INLINE u64 system_time_msec ()
 {
     timeval timebuf;
     gettimeofday (&timebuf, NULL);
@@ -37,22 +43,23 @@ INLINE uint64_t system_time_msec ()
 
 namespace Time {
 
-    //typedef enum point : uint64_t
+    //enum point : u64
     //{
     //    M_SEC = 1000,
-    //} point;
-    //INLINE point  operator-  (const point &p1, const point &p2) { return point (uint64_t (p1) - uint64_t (p2)); }
+    //};
+    //INLINE point  operator-  (const point &p1, const point &p2) { return point (u64 (p1) - u64 (p2)); }
 
-    typedef int64_t point;
+    typedef i64     point;
+
     const point M_SEC = 1000;
 
-    INLINE point now () { return point (system_time_msec ()); }
+    INLINE point now () { return system_time_msec (); }
 
     inline std::string to_string (const point &p)
     {
-        std::ostringstream stime;
+        std::ostringstream oss;
 
-//#ifdef _WIN32
+#   if defined(_WIN32) || defined(__CYGWIN__) || defined(__MINGW32__) || defined(__MINGW64__) || defined(__BORLANDC__)
 
         time_t time = (p / M_SEC);
         char *str_time = ctime (&time);
@@ -60,28 +67,30 @@ namespace Time {
         //char str_time[26];
         //errno_t err = ctime_s (str_time, sizeof (str_time), &time);
         //if (err)
-        //if (!str_time[0])
-        //{
-        //    return std::string ("ERROR: Invalid time ") + std::to_string (uint64_t (time));
-        //}
+
+        if (!str_time[00])
+        {
+            oss << "ERROR: Invalid time '" << time << "'";
+            return oss.str ();
+        }
 
         str_time[10] = '\0';
         str_time[19] = '\0';
         str_time[24] = '\0';
 
-        stime << std::setfill ('0')
+        oss << std::setfill ('0')
             << &str_time[00] << " "
             << &str_time[20] << " "
             << &str_time[11] << "."
             << std::setw (3) << (p % M_SEC);
 
-//#else
-//
-//        // TODO::
-//
-//#endif
+#   else
 
-        return stime.str ();
+//        // TODO::
+
+#   endif
+
+        return oss.str ();
     }
 }
 
@@ -93,4 +102,4 @@ inline std::basic_ostream<charT, Traits>&
     return os;
 }
 
-#endif
+#endif // _TIME_H_INC_

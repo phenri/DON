@@ -1,6 +1,9 @@
-//#pragma once
-#ifndef FOREST_H_
-#define FOREST_H_
+#ifdef _MSC_VER
+#   pragma once
+#endif
+
+#ifndef _FOREST_H_INC_
+#define _FOREST_H_INC_
 
 #include "Tree.h"
 
@@ -18,7 +21,7 @@ protected:
 public:
 
     Forest ();
-    ~Forest ();
+   ~Forest ();
 
     typename Tree<T>::List trees () const;
     void trees (const typename Tree<T>::List &trees);
@@ -49,7 +52,7 @@ public:
 };
 
 //template<class T>
-//::std::ostream& operator<< (::std::ostream &ostream, const Forest<T> &forest)
+//std::ostream& operator<< (std::ostream &ostream, const Forest<T> &forest)
 //{
 //    forest.print (ostream);
 //    return ostream;
@@ -143,4 +146,4 @@ inline void Forest<T>::print (std::basic_ostream<charT, Traits>& os) const
     }
 }
 
-#endif
+#endif // _FOREST_H_INC_

@@ -1,9 +1,15 @@
-//#pragma once
-#ifndef TIE_BUFFER_H_
-#define TIE_BUFFER_H_
+#ifdef _MSC_VER
+#   pragma once
+#endif
+
+#ifndef _TIE_BUFFER_H_INC_
+#define _TIE_BUFFER_H_INC_
 
 #include <streambuf>
 #include <fstream>
+#include <cstring>
+
+#include "Platform.h"
 #include "noncopyable.h"
 
 namespace std {
@@ -15,42 +21,41 @@ namespace std {
     {
 
     private:
-        basic_streambuf<Elem, Traits> *_sbuf;
-        basic_ofstream <Elem, Traits> *_fstm;
+        basic_streambuf<Elem, Traits> *_strmbuf;
+        basic_ofstream <Elem, Traits> *_filestm;
 
     public:
 
-        //typedef typename basic_streambuf<Elem, Traits>::int_type int_type;
-        typedef typename Traits::int_type                               int_type;
+        typedef typename Traits::int_type   int_type;
 
         basic_tie_buf (
-            basic_streambuf<Elem, Traits> *sbuf,
-            basic_ofstream <Elem, Traits> *fstm)
-            : _sbuf (sbuf)
-            , _fstm (fstm)
+            basic_streambuf<Elem, Traits> *strmbuf,
+            basic_ofstream <Elem, Traits> *filestm)
+            : _strmbuf (strmbuf)
+            , _filestm (filestm)
         {}
 
         inline basic_streambuf<Elem, Traits>* sbuf () const
         {
-            return _sbuf;
+            return _strmbuf;
         }
 
         inline int_type write (int_type c, const Elem prefix[])
         {
             static int_type last_ch = '\n';
-
+            
             bool error = false;
             if ('\n' == last_ch)
             {
-                uint32_t length = strlen (prefix);
-                if (_fstm->rdbuf ()->sputn (prefix, length) != length)
+                u32 length = u32 (strlen (prefix));
+                if (_filestm->rdbuf ()->sputn (prefix, length) != length)
                 {
                     error = true;
                 }
             }
             if (error) return EOF;
 
-            last_ch = _fstm->rdbuf ()->sputc (Elem (c));
+            last_ch = _filestm->rdbuf ()->sputc (Elem (c));
 
             return last_ch;
         }
@@ -59,53 +64,29 @@ namespace std {
 
         virtual int sync () override
         {
-            _fstm->rdbuf ()->pubsync ();
-            return _sbuf->pubsync ();
+            _filestm->rdbuf ()->pubsync ();
+            return _strmbuf->pubsync ();
         }
 
         virtual int_type overflow (int_type c) override
         {
-            return write (_sbuf->sputc (Elem (c)), "<< ");
+            return write (_strmbuf->sputc (Elem (c)), "<< ");
         }
 
         virtual int_type underflow () override
         {
-            return _sbuf->sgetc ();
+            return _strmbuf->sgetc ();
         }
 
         virtual int_type uflow () override
         {
-            return write (_sbuf->sbumpc (), ">> ");
+            return write (_strmbuf->sbumpc (), ">> ");
         }
 
     };
 
     typedef basic_tie_buf<char,    char_traits<char> >     tie_buf;
     typedef basic_tie_buf<wchar_t, char_traits<wchar_t> >  tie_wbuf;
-
-
-    //class TemporaryFilebuf : public filebuf
-    //{
-    //    ostream&   myStream;
-    //    streambuf* mySavedStreambuf;
-    //
-    //public:
-    //    TemporaryFilebuf(
-    //        ostream& toBeChanged,
-    //        string const& filename )
-    //        : filebuf (filename.c_str (), ios_base::out)
-    //        , myStream (toBeChanged )
-    //        , mySavedStreambuf (toBeChanged.rdbuf())
-    //    {
-    //        toBeChanged.rdbuf( this );
-    //    }
-    //
-    //    ~TemporaryFilebuf()
-    //    {
-    //        myStream.rdbuf( mySavedStreambuf );
-    //    }
-    //};
-
 }
 
-#endif // TIE_BUFFER_H_
+#endif // _TIE_BUFFER_H_INC_

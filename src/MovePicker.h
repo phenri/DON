@@ -1,13 +1,18 @@
-//#pragma once
-#ifndef MOVEPICKER_H_
-#define MOVEPICKER_H_
+#ifdef _MSC_VER
+#   pragma once
+#endif
 
-#include <vector>
-#include <set>
+#ifndef _MOVE_PICKER_H_INC_
+#define _MOVE_PICKER_H_INC_
+
+#include <algorithm> 
+#include <cstring>
+
 #include "Type.h"
 #include "MoveGenerator.h"
-#include "Position.h"
 #include "Searcher.h"
+
+class Position;
 
 template<bool GAIN, class T>
 // The Stats struct stores moves statistics.
@@ -23,7 +28,7 @@ struct Stats
 {
 
 private:
-    T _table[14][SQ_NO];
+    T _table[TOT_PIECE][SQ_NO];
 
 public:
 
@@ -31,15 +36,16 @@ public:
 
     inline void clear ()
     {
-        std::memset (_table, 0, sizeof (_table));
+        memset (_table, 0x00, sizeof (_table));
     }
 
     inline void update (Piece p, Square s, Move m)
     {
-        if (m == _table[p][s].first) return;
-
-        _table[p][s].second = _table[p][s].first;
-        _table[p][s].first = m;
+        if (m != _table[p][s].first)
+        {
+            _table[p][s].second = _table[p][s].first;
+            _table[p][s].first = m;
+        }
     }
 
     inline void update (Piece p, Square s, Value v)
@@ -50,7 +56,7 @@ public:
         }
         else
         {
-            if (abs (int32_t (_table[p][s] + v)) <= VALUE_KNOWN_WIN)
+            if (abs (i32 (_table[p][s] + v)) < VALUE_KNOWN_WIN)
             {
                 _table[p][s] += v;
             }
@@ -59,11 +65,9 @@ public:
 
 };
 
-typedef Stats< true, Value> GainsStats;
-typedef Stats<false, Value> HistoryStats;
-
+typedef Stats< true,                Value  > GainsStats;
+typedef Stats<false,                Value  > HistoryStats;
 typedef Stats<false, std::pair<Move, Move> > MovesStats;
-
 
 // MovePicker class is used to pick one pseudo legal move at a time from the
 // current position. The most important method is next_move(), which returns a
@@ -76,12 +80,22 @@ class MovePicker
 
 private:
 
-    template<MoveGenerator::GenT>
-    // value() assign a numerical move ordering score to each move in a move list.
-    // The moves with highest scores will be picked first.
-    void value ();
+    enum StageT : u08
+    {
+        MAIN_STAGE, CAPTURES_S1, KILLERS_S1, QUIETS_1_S1, QUIETS_2_S1, BAD_CAPTURES_S1,
+        EVASIONS  , EVASIONS_S2,
+        QSEARCH_0 , CAPTURES_S3, QUIET_CHECKS_S3,
+        QSEARCH_1 , CAPTURES_S4,
+        PROBCUT   , CAPTURES_S5,
+        RECAPTURE , CAPTURES_S6,
+        STOP
+    };
 
-    void generate_next_stage ();
+    ValMove  moves[MAX_MOVES]
+        ,   *cur
+        ,   *end
+        ,   *quiets_end
+        ,   *bad_captures_end;
 
     const Position     &pos;
 
@@ -89,35 +103,62 @@ private:
 
     Searcher::Stack    *ss;
 
-    ValMove             killers[6];
-    Move               *counter_moves
-        ,              *followup_moves;
+    ValMove killers[6];
+    Move   *counter_moves;
+    Move   *followup_moves;
 
-    Move                tt_move;
-    Depth               depth;
+    Move    tt_move;
+    Depth   depth;
 
-    Square              recapture_sq;
-    int32_t             capture_threshold;
+    Square  recapture_sq;
 
-    uint8_t             stage;
+    Value   capture_threshold;
 
-    ValMove             m_list[MAX_MOVES];
-    ValMove            *cur
-        ,              *end
-        ,              *end_quiets
-        ,              *end_bad_captures;
+    u08     stage;
 
     MovePicker& operator= (const MovePicker &); // Silence a warning under MSVC
 
+    template<MoveGenerator::GenT>
+    // value() assign a numerical move ordering score to each move in a move list.
+    // The moves with highest scores will be picked first.
+    void value ();
+
+    void generate_next_stage ();
+
+    // Our insertion sort, guaranteed to be stable, as is needed
+    inline void insertion_sort ()
+    {
+        for (ValMove *p = cur + 1; p < end; ++p)
+        {
+            ValMove tmp = *p, *q;
+            for (q = p; q != cur && *(q-1) < tmp; --q)
+            {
+                *q = *(q-1);
+            }
+            *q = tmp;
+        }
+    }
+
+    // Picks and moves to the front the best move in the range [cur, end],
+    // it is faster than sorting all the moves in advance when moves are few, as
+    // normally are the possible captures.
+    inline void pick_best ()
+    {
+        if (cur < end-1)
+        {
+            std::swap (*cur, *std::max_element (cur, end));
+        }
+    }
+
 public:
 
-    MovePicker (const Position &, Move,        const HistoryStats &, PieceT);
-    MovePicker (const Position &, Move, Depth, const HistoryStats &, Square);
-    MovePicker (const Position &, Move, Depth, const HistoryStats &, Move[], Move[], Searcher::Stack[]);
+    MovePicker (const Position&, const HistoryStats&, Move, Depth, Move*, Move*, Searcher::Stack*);
+    MovePicker (const Position&, const HistoryStats&, Move, Depth, Square);
+    MovePicker (const Position&, const HistoryStats&, Move,        PieceT);
 
-    template<bool SpNode>
+    template<bool SPNode>
     Move next_move ();
 
 };
 
-#endif
+#endif // _MOVE_PICKER_H_INC_

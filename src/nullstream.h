@@ -11,9 +11,12 @@
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
 
-//#pragma once
-#ifndef NULLSTREAM_H_
-#define NULLSTREAM_H_
+#ifdef _MSC_VER
+#   pragma once
+#endif
+
+#ifndef _NULLSTREAM_H_INC_
+#define _NULLSTREAM_H_INC_
 
 #include <streambuf>
 #include <ostream>
@@ -21,7 +24,9 @@
 
 namespace std {
 
-    #pragma warning (disable: 4355)
+#ifdef _MSC_VER
+#   pragma warning (disable: 4355)
+#endif
 
     // generic null stream buffer class
     template <class charT, class Traits = char_traits<charT> >
@@ -37,11 +42,11 @@ namespace std {
 
     private:
 
-        virtual int_type overflow (int_type c) override
-        {
-            // just ignore the character
-            return typename Traits::not_eof (c);
-        }
+        //virtual int_type overflow (int_type c) override
+        //{
+        //    // just ignore the character
+        //    return typename Traits::not_eof (c);
+        //}
     };
 
     // generic null output stream class
@@ -82,4 +87,4 @@ namespace std {
 
 }
 
-#endif // NULLSTREAM_H_
+#endif // _NULLSTREAM_H_INC_

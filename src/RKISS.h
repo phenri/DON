@@ -1,8 +1,11 @@
-//#pragma once
-#ifndef RKISS_H_
-#define RKISS_H_
+#ifdef _MSC_VER
+#   pragma once
+#endif
 
-#include "Type.h"
+#ifndef _RKISS_H_INC_
+#define _RKISS_H_INC_
+
+#include "Platform.h"
 #include "Time.h"
 
 // RKISS is our pseudo random number generator (PRNG) used to compute hash keys.
@@ -19,97 +22,99 @@
 // - 64 bit seed
 // - Return doubles with a full 53 bit mantissa
 // - Thread safe
-// - small noncryptographic PRNG approach is suited for Zobrist Hashing.
+// - Small noncryptographic PRNG approach is suited for Zobrist Hashing.
 // http://chessprogramming.wikispaces.com/Bob+Jenkins
-typedef class RKISS
+class RKISS
 {
 
-public:
-    // Rand keep variables always together
-    typedef struct Rand { uint64_t A, B, C, D; } Rand;
-
 private:
-    Rand S;
 
-    void init (uint32_t seed);
+    u64 A, B, C, D;
+
+    void initialize (u32 seed);
 
 public:
 
     RKISS ()
     {
-        // Make random number generation less deterministic
-        // by using random seed
+        // Make random number generation less deterministic by using random seed
+        u32 seed = Time::now () % 10000;
 
-        //srand (uint32_t (time (NULL)));
-        //uint32_t seed = rand ();
-
-        uint32_t seed = uint64_t (Time::now ()) % 10000;
-
-        init (seed);
+        initialize (seed);
     }
 
-    RKISS (uint32_t seed)
+    RKISS (u32 seed)
     {
-        init (seed);
+        initialize (seed);
     }
 
-    static uint64_t rand64 (Rand &S);
+    //static u64 rand64 (u64 &A, u64 &B, u64 &C, u64 &D);
 
-    uint64_t rand64 ();
-
-    template<class T>
-    T randX ();
+    u64 rand64 ();
 
     template<class T>
-    T rand_boost (uint16_t booster);
+    T rand ();
 
-} RKISS;
+    template<class T>
+    T magic_rand (u16 s);
 
+};
 
-#include "BitRotate.h"
+#include "BitBoard.h"
 
 // initialize given seed and scramble a few rounds
-inline void RKISS::init (uint32_t seed)
+inline void RKISS::initialize (u32 seed)
 {
-    S.A = U64 (0xF1EA5EED);
-    S.B = S.C = S.D = U64 (0xD4E12C77);
+    A = U64 (0xF1EA5EED);
+    B =
+    C =
+    D = U64 (0xD4E12C77);
 
     // PRNG sequence should be not deterministic
     // Scramble a few rounds
-    uint32_t round = (seed % 1000);
-    for (uint32_t i = 0; i < round; ++i) rand64 ();
+    u16 round = (seed % 1000);
+    for (u16 i = 0; i < round; ++i)
+    {
+        rand64 ();
+    }
 }
 
-// Return 64 bit unsigned integer in between [0, 2^64 - 1]
-inline uint64_t RKISS::rand64 (Rand &S)
+//// Return 64 bit unsigned integer in between [0, 2^64 - 1]
+//inline u64 RKISS::rand64 (u64 &A, u64 &B, u64 &C, u64 &D)
+//{
+//    u64 E;
+//    E = A - BitBoard::rotate_L (B, 7);
+//    A = B ^ BitBoard::rotate_L (C, 13);
+//    B = C + BitBoard::rotate_L (D, 37);
+//    C = D + E;
+//    return D = E + A;
+//}
+
+inline u64 RKISS::rand64 ()
 {
-    const uint64_t
-        E = S.A - rotate_L (S.B, 7);
-    S.A = S.B ^ rotate_L (S.C, 13);
-    S.B = S.C + rotate_L (S.D, 37);
-    S.C = S.D + E;
-    S.D = E + S.A;
-    return S.D;
+    //return rand64 (A, B, C, D);
+    u64 E;
+    E = A - BitBoard::rotate_L (B,  7);
+    A = B ^ BitBoard::rotate_L (C, 13);
+    B = C + BitBoard::rotate_L (D, 37);
+    C = D + E;
+    return D = E + A;
 }
-
-inline uint64_t RKISS::rand64 () { return rand64 (S); }
 
 template<class T>
-inline T RKISS::randX () { return T (rand64 ()); }
-
-template<class T>
-inline T RKISS::rand_boost (uint16_t booster)
+inline T RKISS::rand ()
 {
-    // s1 and s2 are used to rotate the candidate magic of a
-    // quantity known to be the optimal to quickly find the magics.
-    uint8_t s1 = (booster >> 0) & 0x3F;
-    uint8_t s2 = (booster >> 6) & 0x3F;
-    T r;
-    r = randX<T> ();
-    r = rotate_R (r, s1);
-    r &= randX<T> ();
-    r = rotate_R (r, s2);
-    return T (r & randX<T> ());
+    return T (rand64 ());
 }
 
-#endif // RKISS_H_
+template<class T>
+// Special generator used to fast initialize magic numbers.
+// Here the trick is to rotate the randoms of a given quantity 's'
+// known to be optimal to quickly find a good magic candidate.
+inline T RKISS::magic_rand (u16 s)
+{
+    return BitBoard::rotate_L (BitBoard::rotate_L (rand<T> (), (s >> 0) & 0x3F) & rand<T> ()
+                                                             , (s >> 6) & 0x3F) & rand<T> ();
+}
+
+#endif // _RKISS_H_INC_

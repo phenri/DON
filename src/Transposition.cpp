@@ -1,103 +1,117 @@
 #include "Transposition.h"
 
-//#include <cmath>
 #include "BitScan.h"
 #include "Engine.h"
 
+TranspositionTable  TT; // Global Transposition Table
+
 using namespace std;
 
-// Global Transposition Table
-TranspositionTable TT;
+const u08  TranspositionTable::CLUSTER_ENTRIES = 4;
 
-bool ClearHash = false;
+const u08  TranspositionTable::TTENTRY_SIZE = sizeof (TTEntry);  // 16
 
-void TranspositionTable::aligned_memory_alloc (uint64_t size, uint32_t alignment)
+#ifdef _64BIT
+const u32 TranspositionTable::MAX_HASH_BIT  = 32; // 36
+#else
+const u32 TranspositionTable::MAX_HASH_BIT  = 32;
+#endif
+
+const u32 TranspositionTable::MIN_TT_SIZE   = 4;
+
+const u32 TranspositionTable::MAX_TT_SIZE   = (U64 (1) << (MAX_HASH_BIT-1 - 20)) * TTENTRY_SIZE;
+
+void TranspositionTable::alloc_aligned_memory (u64 mem_size, u08 alignment)
 {
+
     ASSERT (0 == (alignment & (alignment - 1)));
+    ASSERT (0 == (mem_size  & (alignment - 1)));
+
+#ifdef LPAGES
+
+    u08 offset = max<i08> (alignment-1, sizeof (void *));
+
+    MemoryHandler::create_memory (_mem, mem_size, alignment);
+
+    void *ptr = (void *) ((uintptr_t (_mem) + offset) & ~uintptr_t (offset));
+    _hash_table = (TTEntry *) (ptr);
+
+#else
 
     // We need to use malloc provided by C.
-    // First we need to allocate memory of size bytes + alignment + sizeof(void *).
+    // First we need to allocate memory of mem_size + max (alignment, sizeof (void *)).
     // We need 'bytes' because user requested it.
     // We need to add 'alignment' because malloc can give us any address and
     // we need to find multiple of 'alignment', so at maximum multiple
     // of alignment will be 'alignment' bytes away from any location.
     // We need 'sizeof(void *)' for implementing 'aligned_free',
-    // since we are returning modified memory pointer, not given by malloc ,to the user,
+    // since we are returning modified memory pointer, not given by malloc, to the user,
     // we must free the memory allocated by malloc not anything else.
     // So storing address given by malloc just above pointer returning to user.
     // Thats why needed extra space to store that address.
     // Then checking for error returned by malloc, if it returns NULL then 
-    // aligned_malloc will fail and return NULL or exit().
+    // alloc_aligned_memory will fail and return NULL or exit().
 
-    uint32_t offset = 
-        //(alignment - 1) + sizeof (void *);
-        max<uint32_t> (alignment, sizeof (void *));
+    u08 offset = max<i08> (alignment, sizeof (void *));
 
-    void *mem = calloc (size + offset, 1);
-    if (!mem)
+    void *mem = calloc (mem_size + offset, 1);
+    if (mem == NULL)
     {
-        cerr << "ERROR: hash failed to allocate " << size << " byte..." << endl;
+        cerr << "ERROR: Failed to allocate Hash " << (mem_size >> 20) << " MB." << endl;
         Engine::exit (EXIT_FAILURE);
     }
 
-    void **ptr = 
+    std::cout << "info string Hash " << (mem_size >> 20) << " MB." << std::endl;
+
+    void **ptr =
         //(void **) (uintptr_t (mem) + sizeof (void *) + (alignment - ((uintptr_t (mem) + sizeof (void *)) & uintptr_t (alignment - 1))));
         (void **) ((uintptr_t (mem) + offset) & ~uintptr_t (alignment - 1));
-    
-    _hash_table = (TranspositionEntry*) (ptr);
 
-    ASSERT (0 == (size & (alignment - 1)));
+    ptr[-1]     = mem;
+    _hash_table = (TTEntry *) (ptr[0]);
+
+#endif
+
     ASSERT (0 == (uintptr_t (_hash_table) & (alignment - 1)));
-    
-    ptr[-1] = mem;
+
 }
 
 // resize(mb) sets the size of the table, measured in mega-bytes.
 // Transposition table consists of a power of 2 number of clusters and
-// each cluster consists of NUM_TENTRY_CLUSTER number of entry.
-uint32_t TranspositionTable::resize (uint32_t size_mb)
+// each cluster consists of CLUSTER_ENTRIES number of entry.
+u32 TranspositionTable::resize (u32 mem_size_mb, bool force)
 {
-    //ASSERT (size_mb >= SIZE_MIN_TT);
-    //ASSERT (size_mb <= SIZE_MAX_TT);
-    if (size_mb < SIZE_MIN_TT) size_mb = SIZE_MIN_TT;
-    if (size_mb > SIZE_MAX_TT) size_mb = SIZE_MAX_TT;
-    //{
-    //    cerr << "ERROR: hash size too large " << size_mb << " MB..." << endl;
-    //    return;
-    //}
+    if (mem_size_mb < MIN_TT_SIZE) mem_size_mb = MIN_TT_SIZE;
+    if (mem_size_mb > MAX_TT_SIZE) mem_size_mb = MAX_TT_SIZE;
 
-    uint64_t size_byte    = uint64_t (size_mb) << 20;
-    uint32_t total_entry  = (size_byte) / SIZE_TENTRY;
-    //uint32_t total_cluster  = total_entry / NUM_TENTRY_CLUSTER;
+    u64 mem_size      = u64 (mem_size_mb) << 20;
+    u64 cluster_count = (mem_size) / sizeof (TTEntry[CLUSTER_ENTRIES]);
+    u64   entry_count = u64 (CLUSTER_ENTRIES) << scan_msq (cluster_count);
 
-    uint8_t bit_hash = scan_msq (total_entry);
-    ASSERT (bit_hash < MAX_BIT_HASH);
-    if (bit_hash >= MAX_BIT_HASH) bit_hash = MAX_BIT_HASH - 1;
+    ASSERT (scan_msq (entry_count) < MAX_HASH_BIT);
 
-    total_entry     = uint32_t (1) << bit_hash;
-    uint64_t size   = total_entry * SIZE_TENTRY;
-    
-    if (_hash_mask == (total_entry - NUM_TENTRY_CLUSTER)) return (size >> 20);
+    mem_size  = entry_count * TTENTRY_SIZE;
 
-    erase ();
+    if (force || entry_count != entries ())
+    {
+        free_aligned_memory ();
 
-    aligned_memory_alloc (size, SIZE_CACHE_LINE); 
+        alloc_aligned_memory (mem_size, CACHE_LINE_SIZE);
 
-    _hash_mask      = (total_entry - NUM_TENTRY_CLUSTER);
-    _stored_entry   = 0;
-    _generation     = 0;
+        _hash_mask = (entry_count - CLUSTER_ENTRIES);
+    }
 
-    return (size >> 20);
+    return (mem_size >> 20);
 }
 
 // store() writes a new entry in the transposition table.
 // It contains folowing valuable information.
-//  - key
-//  - move.
-//  - score.
-//  - depth.
-//  - bound.
-//  - nodes.
+//  - Key
+//  - Move.
+//  - Score.
+//  - Depth.
+//  - Bound.
+//  - Nodes.
 // The lower order bits of position key are used to decide on which cluster the position will be placed.
 // The upper order bits of position key are used to store in entry.
 // When a new entry is written and there are no empty entries available in cluster,
@@ -106,60 +120,76 @@ uint32_t TranspositionTable::resize (uint32_t size_mb)
 // * if e1 is from the current search and e2 is from a previous search.
 // * if e1 & e2 is from a current search then EXACT bound is valuable.
 // * if the depth of e1 is bigger than the depth of e2.
-void TranspositionTable::store (Key key, Move move, Depth depth, Bound bound, uint16_t nodes, Value value, Value e_value)
+void TranspositionTable::store (Key key, Move move, Depth depth, Bound bound, u16 nodes, Value value, Value eval)
 {
-    uint32_t key32 = uint32_t (key >> 32); // 32 upper-bit of key
-
-    TranspositionEntry *te = get_cluster (key);
+    u32 key32 = (key >> 32); // 32 upper-bit of key inside cluster
+    TTEntry *tte = cluster_entry (key);
     // By default replace first entry
-    TranspositionEntry *re = te;
+    TTEntry *rte = tte;
 
-    for (uint8_t i = 0; i < NUM_TENTRY_CLUSTER; ++i, ++te)
+    for (u08 i = 0; i < CLUSTER_ENTRIES; ++i, ++tte)
     {
-        if (!te->key () || te->key () == key32) // Empty or Old then overwrite
+        if (tte->_key == 0 || tte->_key == key32) // Empty or Old then overwrite
         {
-            // Do not overwrite when new type is EVAL_LOWER
-            //if (te->key () && BND_LOWER == bound) return;
-
             // Preserve any existing TT move
-            if (MOVE_NONE == move) move = te->move ();
+            if (move == MOVE_NONE)
+            {
+                move = Move (tte->_move);
+            }
 
-            re = te;
+            rte = tte;
             break;
         }
-        else
-        {
-            // replace would be a no-op in this common case
-            if (0 == i) continue;
-        }
 
-        // implement replacement strategy
-        int8_t c1 = ((re->gen () == _generation) ? +2 : 0);
-        int8_t c2 = ((te->gen () == _generation) || (te->bound () == BND_EXACT) ? -2 : 0);
-        int8_t c3 = ((te->depth () < re->depth ()) ? +1 : 0);
-        //int8_t c4 = 0;//((te->nodes () < re->nodes ()) ? +1 : 0);
+        // Replace would be a no-op in this common case
+        if (0 == i) continue;
 
-        if ((c1 + c2 + c3) > 0)
+        // Implement replacement strategy when a collision occurs
+
+        /*
+        if ( ((tte->_gen == _generation || tte->_bound == BND_EXACT)
+            - (rte->_gen == _generation)
+            - (tte->_depth < rte->_depth)) < 0)
         {
-            re = te;
+            rte = tte;
         }
+        */
+
+        i08 gc = (rte->_gen == _generation) - ((tte->_gen == _generation) || (tte->_bound == BND_EXACT));
+        if (gc != 0)
+        {
+            if (gc > 0) rte = tte;
+            continue;
+        }
+        // gc == 0
+        i16 dc = (rte->_depth - tte->_depth);
+        if (dc != 0)
+        {
+            if (dc > 0) rte = tte;
+            continue;
+        }
+        // dc == 0
+        i16 nc = (rte->_nodes - tte->_nodes);
+        if (nc > 0) rte = tte;
+        //continue;
     }
 
-    if (!re->move () && move) ++_stored_entry;
-    if (re->move () && !move) --_stored_entry;
-
-    re->save (key32, move, depth, bound, _generation, nodes/1000, value, e_value);
+    rte->save (key32, move, depth, bound, (nodes >> 10), value, eval, _generation);
 }
 
 // retrieve() looks up the entry in the transposition table.
 // Returns a pointer to the entry found or NULL if not found.
-const TranspositionEntry* TranspositionTable::retrieve (Key key) const
+const TTEntry* TranspositionTable::retrieve (Key key) const
 {
-    uint32_t key32 = uint32_t (key >> 32);
-    const TranspositionEntry *te = get_cluster (key);
-    for (uint8_t i = 0; i < NUM_TENTRY_CLUSTER; ++i, ++te)
+    u32 key32 = (key >> 32);
+    TTEntry *tte = cluster_entry (key);
+    for (u08 i = 0; i < CLUSTER_ENTRIES; ++i, ++tte)
     {
-        if (te->key () == key32) return te;
+        if (tte->_key == key32)
+        {
+            tte->_gen = _generation;
+            return tte;
+        }
     }
     return NULL;
 }

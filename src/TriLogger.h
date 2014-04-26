@@ -21,35 +21,37 @@
 //
 // CLEANTLOG (clean all)
 
-//#pragma once
-#ifndef TRI_LOGGER_H_
-#define TRI_LOGGER_H_
+#ifdef _MSC_VER
+#   pragma once
+#endif
+
+#ifndef _TRI_LOGGER_H_INC_
+#define _TRI_LOGGER_H_INC_
 
 #include <ostream>
 #include <memory>
-//#include <memory.h>
+
 #include "Time.h"
 
 //#define CLEANTLOG
 
 //#define OTLOG
 //#define ETLOG
-//#define FTLOG   except_log
+//#define FTLOG   ExceptLog
 
 namespace TrivialLogger {
 
     namespace implementation {
-
         class TriLoggerImpl;
     }
 
     // main trivial logger class
-    typedef class TriLogger
+    class TriLogger
     {
 
     private:
 
-        static ::std::unique_ptr<implementation::TriLoggerImpl> _tl_impl;
+        static ::std::unique_ptr<implementation::TriLoggerImpl> _p_tl_impl;
 
         // Don't forget to declare these functions.
         // Want to make sure they are unaccessable & non-copyable
@@ -73,7 +75,7 @@ namespace TrivialLogger {
         // return reference to pointer to output stream
         static ::std::ostream*& ostream_ptr ();
 
-    } TriLogger;
+    };
 
     // important funtion which helps solves
     // "static initialisation fiasco" problem
@@ -85,7 +87,7 @@ namespace TrivialLogger {
 
     namespace implementation
     {
-        extern ::std::unique_ptr<TriLogger> tl_ptr;
+        extern ::std::unique_ptr<TriLogger> p_trilog;
     }
 }
 
@@ -99,7 +101,7 @@ namespace TrivialLogger {
 //#undef TRI_LOG_FN
 //#undef TRI_LOG_INFO
 
-#if defined(CLEANTLOG)
+#ifdef CLEANTLOG
 
 #define TRI_LOG_ON()        ((void) 0)
 #define TRI_LOG_OFF()       ((void) 0)
@@ -124,8 +126,8 @@ namespace TrivialLogger {
     << "[" << Time::now () << "] "                  \
     << "\""<< __FILE__<<"\" ("<<__LINE__<< ") "     \
     << __FUNCTION__ << " () : "                     \
-    << "\'"<<#var<<" = "<<var<<"\'" << ::std::endl; \
-    } } while(false)
+    << "\'"<<#var<<" = "<<var<<"\'" << std::endl;   \
+    } } while (false)
 
 // macro prints value of constant strings to the logger stream
 #define TRI_LOG_MSG(msg)                            \
@@ -135,8 +137,8 @@ namespace TrivialLogger {
     << "[" << Time::now () << "] "                  \
     << "\""<< __FILE__<<"\" ("<<__LINE__<< ") "     \
     << __FUNCTION__ << " () : "                     \
-    << "\"" << msg << "\"" << ::std::endl;          \
-    } } while(false)
+    << "\"" << msg << "\"" << std::endl;            \
+    } } while (false)
 
 
 
@@ -152,7 +154,7 @@ namespace TrivialLogger {
 //        if (log.is_active())
 //        {
 //            *(log.ostream_ptr()) << t1 << " (" << t2 << ") : ";
-//            *(log.ostream_ptr()) << t3 << " = " << t4 << ::std::endl;
+//            *(log.ostream_ptr()) << t3 << " = " << t4 << std::endl;
 //        } 
 //    }
 //    
@@ -161,7 +163,7 @@ namespace TrivialLogger {
 //    {
 //        if (log.is_active())
 //        {
-//            *(log.ostream_ptr()) << t << ::std::endl;
+//            *(log.ostream_ptr()) << t << std::endl;
 //        } 
 //    }
 //}
@@ -179,4 +181,4 @@ namespace TrivialLogger {
 
 #endif
 
-#endif // TRI_LOGGER_H_
+#endif // _TRI_LOGGER_H_INC_

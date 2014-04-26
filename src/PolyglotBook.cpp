@@ -1,87 +1,84 @@
 #include "PolyglotBook.h"
+
 #include <algorithm>
 #include <vector>
 #include <iomanip>
 
-//#include "Position.h"
+#include "manipulator.h"
+#include "Position.h"
 #include "Zobrist.h"
 #include "MoveGenerator.h"
 #include "Notation.h"
-#include "manipulator.h"
 
 using namespace std;
 using namespace MoveGenerator;
+using namespace Notation;
 
-#define STM_POS(x)  ((SIZE_PGHEADER) + (x)*(SIZE_PGENTRY))
+#define STM_POS(x)  ((PGHEADER_SIZE) + (x)*(PGENTRY_SIZE))
 
 
-inline bool operator== (const PolyglotBook::PolyglotEntry &pe1, const PolyglotBook::PolyglotEntry &pe2)
+inline bool operator== (const PolyglotBook::PBEntry &pe1, const PolyglotBook::PBEntry &pe2)
 {
-    return 
-        (pe1.key == pe2.key) &&
-        (pe1.move == pe2.move) &&
-        (pe1.weight == pe2.weight);
+    return (pe1.key == pe2.key)
+        && (pe1.move == pe2.move)
+        && (pe1.weight == pe2.weight);
 }
 
-inline bool operator!= (const PolyglotBook::PolyglotEntry &pe1, const PolyglotBook::PolyglotEntry &pe2)
+inline bool operator!= (const PolyglotBook::PBEntry &pe1, const PolyglotBook::PBEntry &pe2)
 {
     return !(pe1 == pe2);
 }
 
-inline bool operator>  (const PolyglotBook::PolyglotEntry &pe1, const PolyglotBook::PolyglotEntry &pe2)
+inline bool operator>  (const PolyglotBook::PBEntry &pe1, const PolyglotBook::PBEntry &pe2)
 {
-    return 
-        (pe1.key != pe2.key) ?
-        (pe1.key > pe2.key) :
-    (pe1.move > pe2.move);      // order by move value
-    //(pe1.weight > pe2.weight);  // order by weight value
+    return (pe1.key != pe2.key)
+        ? (pe1.key > pe2.key)
+        : (pe1.move > pe2.move);      // order by move value
+    //: (pe1.weight > pe2.weight);  // order by weight value
 }
 
-inline bool operator<  (const PolyglotBook::PolyglotEntry &pe1, const PolyglotBook::PolyglotEntry &pe2)
+inline bool operator<  (const PolyglotBook::PBEntry &pe1, const PolyglotBook::PBEntry &pe2)
 {
-    return
-        (pe1.key != pe2.key) ?
-        (pe1.key < pe2.key) :
-    (pe1.move < pe2.move);      // order by move value
-    //(pe1.weight < pe2.weight);  // order by weight value
+    return (pe1.key != pe2.key)
+        ? (pe1.key < pe2.key)
+        : (pe1.move < pe2.move);      // order by move value
+    //: (pe1.weight < pe2.weight);  // order by weight value
 }
 
-inline bool operator>= (const PolyglotBook::PolyglotEntry &pe1, const PolyglotBook::PolyglotEntry &pe2)
+inline bool operator>= (const PolyglotBook::PBEntry &pe1, const PolyglotBook::PBEntry &pe2)
 {
-    return
-        (pe1.key != pe2.key) ?
-        (pe1.key >= pe2.key) :
-    (pe1.move >= pe2.move);      // order by move value
-    //(pe1.weight >= pe2.weight);  // order by weight value
+    return (pe1.key != pe2.key)
+        ? (pe1.key >= pe2.key)
+        : (pe1.move >= pe2.move);      // order by move value
+    //: (pe1.weight >= pe2.weight);  // order by weight value
 }
 
-inline bool operator<= (const PolyglotBook::PolyglotEntry &pe1, const PolyglotBook::PolyglotEntry &pe2)
+inline bool operator<= (const PolyglotBook::PBEntry &pe1, const PolyglotBook::PBEntry &pe2)
 {
-    return
-        (pe1.key != pe2.key) ?
-        (pe1.key <= pe2.key) :
-    (pe1.move <= pe2.move);      // order by move value
-    //(pe1.weight <= pe2.weight);  // order by weight value
+    return (pe1.key != pe2.key)
+        ? (pe1.key <= pe2.key)
+        : (pe1.move <= pe2.move);      // order by move value
+    //: (pe1.weight <= pe2.weight);  // order by weight value
 }
 
-PolyglotBook::PolyglotEntry::operator string () const
+PolyglotBook::PBEntry::operator string () const
 {
-    ostringstream spe;
+    ostringstream oss;
 
     Move m = Move (move);
     // Set new type for promotion piece
-    PieceT pt = PieceT ((m >> 12) & 0x7);
-    if (pt) prom_type (m, pt);
+    PieceT pt = PieceT ((m >> 12) & TOTL);
+    if (pt != PAWN) promote (m, pt);
 
-    spe << setfill ('0')
-        << " key: " << setw (16) << hex << uppercase << key
-        << setfill ('.')
-        << " move: " << setw (5) << left << move_to_can (m)
+    oss << setfill ('0')
+        << " key: "    << setw (16) << hex << uppercase << key
+        << setfill (' ')
+        << " move: "   << setw (5) << left << move_to_can (m)
         << setfill ('0')
         << " weight: " << setw (4) << right << dec << weight
-        << " learn: " << setw (2) << learn;
+        << " learn: "  << setw (2) << learn;
 
-    return spe.str ();
+    return oss.str ();
 }
 
 
@@ -89,61 +86,50 @@ template<class T>
 PolyglotBook& PolyglotBook::operator>> (T &t)
 {
     t = T ();
-    for (uint8_t i = 0; i < sizeof (T) && good (); ++i)
+    for (u08 i = 0; i < sizeof (t) && good (); ++i)
     {
-        uint8_t byte = uint8_t (get ());
+        u08 byte = u08 (get ());
         t = T ((t << 8) + byte);
     }
     return *this;
 }
 template<>
-PolyglotBook& PolyglotBook::operator>> (PolyglotEntry &pe)
+PolyglotBook& PolyglotBook::operator>> (PBEntry &pbe)
 {
-    *this >> pe.key >> pe.move >> pe.weight >> pe.learn;
+    *this >> pbe.key >> pbe.move >> pbe.weight >> pbe.learn;
     return *this;
 }
 
 template<class T>
 PolyglotBook& PolyglotBook::operator<< (T &t)
 {
-    uint8_t size = sizeof (T);
-    for (uint8_t i = 0; i < size && good (); ++i)
+    const u08 SIZE = sizeof (t);
+    for (u08 i = 0; i < SIZE && good (); ++i)
     {
-        uint8_t byte = uint8_t (t >> (8*(size - 1 - i)));
+        u08 byte = u08 (t >> (8*(SIZE - 1 - i)));
         put (byte);
     }
     return *this;
 }
 template<>
-PolyglotBook& PolyglotBook::operator<< (PolyglotEntry &pe)
+PolyglotBook& PolyglotBook::operator<< (PBEntry &pbe)
 {
-    *this << pe.key << pe.move << pe.weight << pe.learn;
+    *this << pbe.key << pbe.move << pbe.weight << pbe.learn;
     return *this;
 }
 
-PolyglotBook::PolyglotBook()
+PolyglotBook::PolyglotBook ()
     : fstream ()
     , _fn_book ("")
-    , _mode (0)
+    , _mode (ios_base::openmode (0))
     , _size_book (0)
-    , _rkiss ()
 {}
 
-#ifndef NDEBUG
-PolyglotBook::PolyglotBook (const        char *fn_book, ios_base::openmode mode)
-    : fstream (fn_book, mode | ios_base::binary)
-    , _fn_book (fn_book)
-    , _mode (mode)
-    , _size_book (0)
-    , _rkiss ()
-{}
-#endif
 PolyglotBook::PolyglotBook (const string &fn_book, ios_base::openmode mode)
-    : fstream (fn_book, mode | ios_base::binary)
+    : fstream (fn_book.c_str (), mode|ios_base::binary)
     , _fn_book (fn_book)
     , _mode (mode)
     , _size_book (0)
-    , _rkiss ()
 {}
 
 PolyglotBook::~PolyglotBook ()
@@ -155,21 +141,10 @@ PolyglotBook::~PolyglotBook ()
 // mode:
 // Read -> ios_base::in
 // Write-> ios_base::out
-#ifndef NDEBUG
-bool PolyglotBook::open (const        char *fn_book, ios_base::openmode mode)
-{
-    close ();
-    fstream::open (fn_book, mode | ios_base::binary);
-    clear (); // Reset any error flag to allow retry open()
-    _fn_book = fn_book;
-    _mode    = mode;
-    return fstream::is_open ();
-}
-#endif
 bool PolyglotBook::open (const string &fn_book, ios_base::openmode mode)
 {
     close ();
-    fstream::open (fn_book, mode | ios_base::binary);
+    fstream::open (fn_book.c_str (), mode|ios_base::binary);
     clear (); // Reset any error flag to allow retry open()
     _fn_book = fn_book;
     _mode    = mode;
@@ -178,33 +153,33 @@ bool PolyglotBook::open (const string &fn_book, ios_base::openmode mode)
 
 void PolyglotBook::close () { if (fstream::is_open ()) fstream::close (); }
 
-uint64_t PolyglotBook::find_index (const Key key)
+u64 PolyglotBook::find_index (const Key key)
 {
     if (!fstream::is_open ()) return ERROR_INDEX;
 
-    uint64_t beg = uint64_t (0);
-    uint64_t end = uint64_t ((size () - SIZE_PGHEADER) / SIZE_PGENTRY - 1);
+    u64 beg = u64 (0);
+    u64 end = u64 ((size () - PGHEADER_SIZE) / PGENTRY_SIZE - 1);
 
-    PolyglotEntry pe;
+    PBEntry pbe;
 
     ASSERT (beg <= end);
 
     if (beg == end)
     {
         seekg (STM_POS (beg));
-        *this >> pe;
+        *this >> pbe;
     }
     else
     {
         while (beg < end && good ())
         {
-            uint64_t mid = (beg + end) / 2;
+            u64 mid = (beg + end) / 2;
             ASSERT (mid >= beg && mid < end);
 
             seekg (STM_POS (mid));
 
-            *this >> pe;
-            if (key <= pe.key)
+            *this >> pbe;
+            if (key <= pbe.key)
             {
                 end = mid;
             }
@@ -216,20 +191,14 @@ uint64_t PolyglotBook::find_index (const Key key)
     }
 
     ASSERT (beg == end);
-    return (key == pe.key) ? beg : ERROR_INDEX;
+    return (key == pbe.key) ? beg : ERROR_INDEX;
 }
-uint64_t PolyglotBook::find_index (const Position &pos)
+u64 PolyglotBook::find_index (const Position &pos)
 {
     return find_index (ZobPG.compute_posi_key (pos));
 }
 
-#ifndef NDEBUG
-uint64_t PolyglotBook::find_index (const        char *fen, bool c960)
-{
-    return find_index (ZobPG.compute_fen_key (fen, c960));
-}
-#endif
-uint64_t PolyglotBook::find_index (const string &fen, bool c960)
+u64 PolyglotBook::find_index (const string &fen, bool c960)
 {
     return find_index (ZobPG.compute_fen_key (fen, c960));
 }
@@ -243,39 +212,39 @@ Move PolyglotBook::probe_move (const Position &pos, bool pick_best)
 
     Key key = ZobPG.compute_posi_key (pos);
 
-    uint64_t index = find_index (key);
+    u64 index = find_index (key);
     if (ERROR_INDEX == index) return MOVE_NONE;
 
     seekg (STM_POS (index));
 
     Move move = MOVE_NONE;
 
-    PolyglotEntry pe;
+    PBEntry pbe;
 
-    uint16_t max_weight = 0;
-    uint32_t sum_weight = 0;
+    u16 max_weight = 0;
+    u32 sum_weight = 0;
 
-    //vector<PolyglotEntry> pe_list;
-    //while ((*this >> pe), (pe.key == key) && good ())
+    //vector<PBEntry> pe_list;
+    //while ((*this >> pbe), (pbe.key == key))
     //{
-    //    pe_list.push_back (pe);
-    //    max_weight = max (max_weight, pe.weight);
-    //    sum_weight += pe.weight;
+    //    pe_list.push_back (pbe);
+    //    max_weight = max (max_weight, pbe.weight);
+    //    sum_weight += pbe.weight;
     //}
     //if (!pe_list.size ()) return MOVE_NONE;
     //
     //if (pick_best)
     //{
-    //    vector<PolyglotEntry>::const_iterator itr = pe_list.begin ();
-    //    while (itr != pe_list.end ())
+    //    vector<PBEntry>::const_iterator ms = pe_list.begin ();
+    //    while (ms != pe_list.end ())
     //    {
-    //        pe = *itr;
-    //        if (pe.weight == max_weight)
+    //        pbe = *ms;
+    //        if (pbe.weight == max_weight)
     //        {
-    //            move = Move (pe.move);
+    //            move = Move (pbe.move);
     //            break;
     //        }
-    //        ++itr;
+    //        ++ms;
     //    }
     //}
     //else
@@ -285,27 +254,27 @@ Move PolyglotBook::probe_move (const Position &pos, bool pick_best)
     //    //2) pick a random number that is 0 or greater and is less than the sum of the weights
     //    //3) go through the items one at a time, subtracting their weight from your random number, until you get the item where the random number is less than that item's weight
     //
-    //    uint32_t rand = (_rkiss.randX<uint32_t> () % sum_weight);
-    //    vector<PolyglotEntry>::const_iterator itr = pe_list.begin ();
-    //    while (itr != pe_list.end ())
+    //    u32 rand = (_rkiss.rand<u32> () % sum_weight);
+    //    vector<PBEntry>::const_iterator ms = pe_list.begin ();
+    //    while (ms != pe_list.end ())
     //    {
-    //        pe = *itr;
-    //        if (pe.weight > rand)
+    //        pbe = *ms;
+    //        if (pbe.weight > rand)
     //        {
-    //            move = Move (pe.move);
+    //            move = Move (pbe.move);
     //            break;
     //        }
-    //        rand -= pe.weight;
-    //        ++itr;
+    //        rand -= pbe.weight;
+    //        ++ms;
     //    }
     //}
 
-    while ((*this >> pe), (pe.key == key) && good ())
+    while ((*this >> pbe), (pbe.key == key))
     {
-        if (0 == pe.move) continue;
+        if (MOVE_NONE == pbe.move) continue;
 
-        max_weight = max (max_weight, pe.weight);
-        sum_weight += pe.weight;
+        max_weight = max (max_weight, pbe.weight);
+        sum_weight += pbe.weight;
 
         // Choose book move according to its score.
         // If a move has a very high score it has a higher probability
@@ -313,25 +282,25 @@ Move PolyglotBook::probe_move (const Position &pos, bool pick_best)
         // Note that first entry is always chosen.
 
 
-        //uint32_t rand = _rkiss.randX<uint32_t> ();
-        //if ((sum_weight && rand % sum_weight < pe.weight) ||
-        //    (pick_best && (pe.weight == max_weight)))
+        //u32 rand = _rkiss.rand<u32> ();
+        //if ((sum_weight && rand % sum_weight < pbe.weight) ||
+        //    (pick_best && (pbe.weight == max_weight)))
         //{
-        //    move = Move (pe.move);
+        //    move = Move (pbe.move);
         //}
 
         if (pick_best)
         {
-            if (pe.weight == max_weight) move = Move (pe.move);
+            if (pbe.weight == max_weight) move = Move (pbe.move);
         }
         else if (sum_weight)
         {
-            uint16_t rand = _rkiss.randX<uint16_t> () % sum_weight;
-            if (pe.weight > rand) move = Move (pe.move);
+            u16 rand = _rkiss.rand<u16> () % sum_weight;
+            if (pbe.weight > rand) move = Move (pbe.move);
         }
         else if (MOVE_NONE == move) // if not pick best and sum of weight = 0
         {
-            move = Move (pe.move);
+            move = Move (pbe.move);
         }
     }
 
@@ -354,12 +323,12 @@ Move PolyglotBook::probe_move (const Position &pos, bool pick_best)
     // Polyglot use 3 bits while we use 2 bits
     PieceT pt = PieceT ((move >> 12) & 0x7);
     // Set new type for promotion piece
-    if (pt) prom_type (move, pt);
+    if (pt) promote (move, pt);
 
     // Add 'special move' flags and verify it is legal
-    for (MoveList<LEGAL> itr (pos); *itr; ++itr)
+    for (MoveList<LEGAL> ms (pos); *ms != MOVE_NONE; ++ms)
     {
-        Move m = *itr;
+        Move m = *ms;
         //if ((m ^ mtype (m)) == move)
         if ((m & 0x3FFF) == move)
         {
@@ -376,7 +345,7 @@ string PolyglotBook::read_entries (const Position &pos)
 
     Key key = ZobPG.compute_posi_key (pos);
 
-    uint64_t index = find_index (key);
+    u64 index = find_index (key);
     if (ERROR_INDEX == index)
     {
         cerr << "ERROR: no such key... "
@@ -387,33 +356,35 @@ string PolyglotBook::read_entries (const Position &pos)
 
     seekg (STM_POS (index));
 
-    PolyglotEntry pe;
-    vector<PolyglotEntry> pe_list;
+    PBEntry pbe;
 
-    uint32_t sum_weight = 0;
-    while ((*this >> pe), (pe.key == key) && good ())
+    vector<PBEntry> pe_list;
+
+    u32 sum_weight = 0;
+    while ((*this >> pbe), (pbe.key == key))
     {
-        pe_list.push_back (pe);
-        sum_weight += pe.weight;
+        pe_list.push_back (pbe);
+        sum_weight += pbe.weight;
     }
 
-    ostringstream ss;
-    for_each (pe_list.begin (), pe_list.end (), [&ss, &sum_weight] (PolyglotEntry pe)
-    {
-        ss  << setfill ('0')
-            << pe << " prob: " << right << fixed << width_prec (6, 2)
-            << (sum_weight ? double (pe.weight) * 100 / double (sum_weight) : 0.0)
-            << endl;
-    });
+    //TODO::
+    ostringstream oss;
+    //for_each (pe_list.begin (), pe_list.end (), [&oss, &sum_weight] (PBEntry _pbe)
+    //{
+    //    oss << setfill ('0')
+    //        << _pbe << " prob: " << right << fixed << width_prec (6, 2)
+    //        << (sum_weight ? double (_pbe.weight) * 100 / double (sum_weight) : 0.0)
+    //        << endl;
+    //});
 
-    return ss.str ();
+    return oss.str ();
 }
 
-void PolyglotBook::insert_entry (const PolyglotBook::PolyglotEntry &pe)
+void PolyglotBook::insert_entry (const PolyglotBook::PBEntry &pbe)
 {
     if (!fstream::is_open () || !(_mode & ios_base::out)) return;
 
-    uint64_t index = find_index (pe.key);
+    u64 index = find_index (pbe.key);
     if (ERROR_INDEX == index)
     {
 
@@ -434,16 +405,16 @@ void PolyglotBook::insert_entry (const PolyglotBook::PolyglotEntry &pe)
 
 }
 
-void PolyglotBook::import_pgn (const string &fn_pgn)
-{
-    fn_pgn;
-}
-
-void PolyglotBook::merge_book (const string &fn_book)
-{
-    fn_book;
-
-}
+//void PolyglotBook::import_pgn (const string &fn_pgn)
+//{
+//    (void) fn_pgn;
+//}
+//
+//void PolyglotBook::merge_book (const string &fn_book)
+//{
+//    (void) fn_book;
+//
+//}
 
 //void PolyglotBook::dump ()
 //{

@@ -1,24 +1,26 @@
 #include "Benchmark.h"
 
+#include <iostream>
 #include <fstream>
 #include <vector>
-#include "xstring.h"
 
-#include "TriLogger.h"
+#include "Position.h"
 #include "Searcher.h"
 #include "Transposition.h"
 #include "Thread.h"
 #include "UCI.h"
+#include "Debugger.h"
 
 using namespace std;
 using namespace Searcher;
 using namespace Time;
+using namespace Threads;
 
 namespace {
 
-    const uint16_t NUM_FEN = 30;
+    const u08   FEN_TOTAL   = 30;
 
-    const char* default_fens[NUM_FEN] =
+    const char *DefaultFens[FEN_TOTAL] =
     {
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
         "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 10",
@@ -50,107 +52,224 @@ namespace {
         "1r3k2/4q3/2Pp3b/3Bp3/2Q2p2/1p1P2P1/1P2KP2/3N4 w - - 0 15",
         "6k1/4pp1p/3p2p1/P1pPb3/R7/1r2P1PP/3B1P2/6K1 w - - 0 19",
         "8/3p3B/5p2/5P2/p7/PP5b/k7/6K1 w - - 0 30"
-        //"4r1k1/1pq2pp1/p3b2p/1r2P3/3R4/2P2N2/1P1Q2PP/3R3K w - - 3 28",
     };
 
 }
 
-// benchmark () runs a simple benchmark by letting engine analyze a set of positions for a given limit each.
+// benchmark() runs a simple benchmark by letting engine analyze a set of positions for a given limit each.
 // There are five optional parameters:
 //  - transposition table size (default is 32 MB).
 //  - number of search threads that should be used (default is 1 thread).
-//  - filename where to look for positions in fen format (defaults are the positions defined above)
 //  - limit value spent for each position (default is 13 depth),
 //  - type of the limit value:
-//     * depth (default).
-//     * time in secs
-//     * number of nodes.
+//     * 'depth' (default).
+//     * 'time' in secs
+//     * 'nodes' to search.
+//     * 'mate' in moves
+//  - filename where to look for positions in fen format (defaults are the positions defined above)
+//     * 'default' for builtin position
+//     * 'current' for current position
+//     * '<filename>' containing fens position
+// example: bench 32 1 10 depth default
 void benchmark (istream &is, const Position &pos)
 {
     string token;
     vector<string> fens;
 
     // Assign default values to missing arguments
-    string size_tt    = (is >> token) ? token : "32";
-    string num_threads= (is >> token) ? token : "1";
-    string fen_fn     = (is >> token) ? token : "default";
+    string hash       = (is >> token) ? token : "32";
+    string threads    = (is >> token) ? token : "1";
     string limit_val  = (is >> token) ? token : "13";
     string limit_type = (is >> token) ? token : "depth";
+    string fen_fn     = (is >> token) ? token : "default";
 
-    *Options["Hash"]    = size_tt;
-    *Options["Threads"] = num_threads;
+    Options["Hash"]    = hash;
+    Options["Threads"] = threads;
 
-    TT.clear ();
+    i32 value = abs (atoi (limit_val.c_str ()));
+    //value = value >= 0 ? +value : -value;
+
     LimitsT limits;
+    if      (limit_type == "time")  limits.movetime = value * M_SEC; // movetime is in ms
+    else if (limit_type == "nodes") limits.nodes    = value;
+    else if (limit_type == "mate")  limits.mate     = value;
+    //else if (limit_type == "depth")
+    else                            limits.depth    = value;
 
-    if      (iequals (limit_type, "time"))  limits.move_time = atoi (limit_val.c_str ()) * M_SEC; // movetime is in ms
-    else if (iequals (limit_type, "nodes")) limits.nodes     = atoi (limit_val.c_str ());
-    else if (iequals (limit_type, "mate"))  limits.mate_in   = atoi (limit_val.c_str ());
-    //else if (iequals (limit_type, "depth"))
-    else                                    limits.depth     = atoi (limit_val.c_str ());
-
-    if      (iequals (fen_fn, "default"))
+    if      (fen_fn == "default")
     {
-        fens.assign (default_fens, default_fens + NUM_FEN);
+        fens.assign (DefaultFens, DefaultFens + FEN_TOTAL);
     }
-    else if (iequals (fen_fn, "current"))
+    else if (fen_fn == "current")
     {
         fens.push_back (pos.fen ());
     }
     else
     {
-        ifstream fstm_fen (fen_fn.c_str ());
+        ifstream ifs (fen_fn.c_str ());
 
-        if (!fstm_fen.is_open ())
+        if (!ifs.is_open ())
         {
             cerr << "ERROR: Unable to open file ... \'" << fen_fn << "\'" << endl;
             return;
         }
 
         string fen;
-        while (getline (fstm_fen, fen))
+        while (getline (ifs, fen))
         {
             if (!fen.empty ())
             {
                 fens.push_back (fen);
             }
         }
-        fstm_fen.close ();
+
+        ifs.close ();
     }
+    
+    bool  chess960 = bool (Options["UCI_Chess960"]);
+    u64   nodes    = 0;
+    point elapsed  = now ();
 
     StateInfoStackPtr states;
-    uint64_t nodes = 0;
-    point elapsed = now ();
-    bool chess960 = *(Options["UCI_Chess960"]);
 
-    uint32_t total = fens.size ();
-    for (uint32_t i = 0; i < total; ++i)
+    u16 total = fens.size ();
+    for (u16 i = 0; i < total; ++i)
     {
-        Position root_pos (fens[i], Threads.main (), chess960);
+        Position root_pos (fens[i], Threadpool.main (), chess960);
 
-        cerr << "\n--------------\n" 
+        cerr
+            << "\n--------------\n" 
             << "Position: " << (i + 1) << "/" << total << "\n";
 
         if (limit_type == "perft")
         {
-            uint64_t cnt = perft (root_pos, int32_t (limits.depth) * ONE_MOVE);
-            cerr << "\nPerft " << limits.depth  << " leaf nodes: " << cnt << "\n";
-            nodes += cnt;
+            u64 leaf_count = perft (root_pos, i32 (limits.depth) * ONE_MOVE);
+            cerr << "\nPerft " << u16 (limits.depth)  << " leaf nodes: " << leaf_count << "\n";
+            nodes += leaf_count;
         }
         else
         {
-            Threads.start_thinking (root_pos, limits, states);
-            Threads.wait_for_think_finished ();
+            TT.master_clear ();
+            Threadpool.start_thinking (root_pos, limits, states);
+            Threadpool.wait_for_think_finished ();
             nodes += RootPos.game_nodes ();
         }
     }
 
-    elapsed = now () - elapsed + 1; // Ensure positivity to avoid a 'divide by zero'
+    cerr<< "\n---------------------------\n";
 
-    cerr << "\n===========================\n"
+    Debugger::dbg_print (); // Just before to exit
+
+    elapsed = now () - elapsed;
+    // Ensure non-zero to avoid a 'divide by zero'
+    if (elapsed == 0) elapsed = 1;
+
+    cerr
+        << "\n===========================\n"
         << "Total time (ms) : " << elapsed << "\n"
         << "Nodes searched  : " << nodes   << "\n"
         << "Nodes/second    : " << nodes * 1000 / elapsed
-        << endl;
-
+        << "\n---------------------------\n" << endl;
 }
+/*
+void benchtest (istream &is, const Position &pos)
+{
+    string token;
+    vector<string> fens;
+
+    // Assign default values to missing arguments
+    string hash       = (is >> token) ? token : "1024";
+    string threads    = (is >> token) ? token : "4";
+    string limit_val  = (is >> token) ? token : "15";
+    string limit_type = (is >> token) ? token : "depth";
+    string fen_fn     = (is >> token) ? token : "default";
+
+    Options["Hash"]    = hash;
+    Options["Threads"] = threads;
+
+    i32 value = abs (atoi (limit_val.c_str ()));
+    //value = value >= 0 ? +value : -value;
+
+    LimitsT limits;
+    if      (limit_type == "time")  limits.movetime = value * M_SEC; // movetime is in ms
+    else if (limit_type == "nodes") limits.nodes    = value;
+    else if (limit_type == "mate")  limits.mate     = value;
+    //else if (limit_type == "depth")
+    else                            limits.depth    = value;
+
+    if      (fen_fn == "default")
+    {
+        fens.assign (DefaultFens, DefaultFens + FEN_TOTAL);
+    }
+    else if (fen_fn == "current")
+    {
+        fens.push_back (pos.fen ());
+    }
+    else
+    {
+        ifstream ifs (fen_fn.c_str ());
+
+        if (!ifs.is_open ())
+        {
+            cerr << "ERROR: Unable to open file ... \'" << fen_fn << "\'" << endl;
+            return;
+        }
+
+        string fen;
+        while (getline (ifs, fen))
+        {
+            if (!fen.empty ())
+            {
+                fens.push_back (fen);
+            }
+        }
+
+        ifs.close ();
+    }
+    
+    bool chess960  = bool (Options["UCI_Chess960"]);
+    u64 nodes      = 0;
+    point elapsed  = now ();
+
+    StateInfoStackPtr states;
+
+    u16 total = fens.size ();
+    for (u16 i = 0; i < total; ++i)
+    {
+        Position root_pos (fens[i], Threadpool.main (), chess960);
+
+        cerr
+            << "\n--------------\n" 
+            << "Position: " << (i + 1) << "/" << total << "\n";
+
+        if (limit_type == "perft")
+        {
+            u64 leaf_count = perft (root_pos, i32 (limits.depth) * ONE_MOVE);
+            cerr << "\nPerft " << u16 (limits.depth)  << " leaf nodes: " << leaf_count << "\n";
+            nodes += leaf_count;
+        }
+        else
+        {
+            TT.master_clear ();
+            Threadpool.start_thinking (root_pos, limits, states);
+            Threadpool.wait_for_think_finished ();
+            nodes += RootPos.game_nodes ();
+        }
+    }
+
+    cerr<< "\n---------------------------\n";
+
+    Debugger::dbg_print (); // Just before to exit
+
+    elapsed = now () - elapsed;
+    // Ensure non-zero to avoid a 'divide by zero'
+    if (elapsed == 0) elapsed = 1;
+
+    cerr
+        << "\n===========================\n"
+        << "Total time (ms) : " << elapsed << "\n"
+        << "Nodes searched  : " << nodes   << "\n"
+        << "Nodes/second    : " << nodes * 1000 / elapsed
+        << "\n---------------------------\n" << endl;
+}
+*/

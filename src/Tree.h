@@ -1,6 +1,9 @@
-//#pragma once
-#ifndef TREE_H_
-#define TREE_H_
+#ifdef _MSC_VER
+#   pragma once
+#endif
+
+#ifndef _TREE_H_INC_
+#define _TREE_H_INC_
 
 #include <memory>
 #include <vector>
@@ -58,7 +61,7 @@ public:
     void clear ();
 
     template<class charT, class Traits>
-    void print (std::basic_ostream<charT, Traits> &os, uint32_t indent) const;
+    void print (std::basic_ostream<charT, Traits> &os, u32 indent) const;
 
 };
 
@@ -220,7 +223,7 @@ inline void Tree<T>::clear () { _branches.clear (); }
 
 template<class T>
 template<class charT, class Traits>
-inline void Tree<T>::print (std::basic_ostream<charT, Traits> &os, uint32_t indent) const
+inline void Tree<T>::print (std::basic_ostream<charT, Traits> &os, u32 indent) const
 {
 
     //os << _data;
@@ -256,7 +259,7 @@ inline void Tree<T>::print (std::basic_ostream<charT, Traits> &os, uint32_t inde
         typename Tree<T>::List::const_iterator itr = branches.cbegin ();
         while (itr != branches.cend ())
         {
-            for (uint32_t i = 0; i < indent; ++i) os << "|  ";
+            for (u32 i = 0; i < indent; ++i) os << "|  ";
             os << "|->";
             (*(*itr)).print (os, indent + 1);
             ++itr;
@@ -265,4 +268,4 @@ inline void Tree<T>::print (std::basic_ostream<charT, Traits> &os, uint32_t inde
 
 }
 
-#endif
+#endif // _TREE_H_INC_

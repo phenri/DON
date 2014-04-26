@@ -1,14 +1,19 @@
-//#pragma once
-#ifndef BITSCAN_H_
-#define BITSCAN_H_
+#ifdef _MSC_VER
+#   pragma once
+#endif
+
+#ifndef _BITSCAN_H_INC_
+#define _BITSCAN_H_INC_
 
 #include "Type.h"
 
-#pragma warning (disable: 4244) // 'argument' : conversion from '-' to '-', possible loss of data
+#ifdef _MSC_VER
+#   pragma warning (disable: 4244) // 'argument' : conversion from '-' to '-', possible loss of data
+#endif
 
 #ifdef BSFQ
 
-#   if defined(_MSC_VER)
+#   ifdef _MSC_VER
 
 #   include <intrin.h> // MSVC popcnt and bsfq instrinsics
 // _BitScanForward64() & _BitScanReverse64()
@@ -18,12 +23,9 @@ INLINE Square scan_lsq (Bitboard bb)
     unsigned long index;
 
 #ifdef _64BIT
-
     _BitScanForward64 (&index, bb);
-
 #else
-
-    if (uint32_t (bb))
+    if (u32 (bb))
     {
         _BitScanForward (&index, bb);
     }
@@ -32,7 +34,6 @@ INLINE Square scan_lsq (Bitboard bb)
         _BitScanForward (&index, bb >> 32);
         index += 32;
     }
-
 #endif
 
     return Square (index);
@@ -43,12 +44,9 @@ INLINE Square scan_msq (Bitboard bb)
     unsigned long index;
 
 #ifdef _64BIT
-
     _BitScanReverse64 (&index, bb);
-
 #else
-
-    if (uint32_t (bb >> 32))
+    if (u32 (bb >> 32))
     {
         _BitScanReverse (&index, bb >> 32);
         index += 32;
@@ -57,17 +55,16 @@ INLINE Square scan_msq (Bitboard bb)
     {
         _BitScanReverse (&index, bb);
     }
-
 #endif
 
     return Square (index);
 }
 
-#   elif defined(__arm__)
+#   elif __arm__
 
 #ifndef _64BIT
 
-INLINE uint8_t scan_lsb32 (uint32_t w)
+INLINE u08 scan_lsb32 (u32 w)
 {
     __asm__ ("rbit %0, %1" : "=r" (w) : "r" (w));
     return __builtin_clz (w);
@@ -77,32 +74,23 @@ INLINE uint8_t scan_lsb32 (uint32_t w)
 
 INLINE Square scan_lsq (Bitboard bb)
 {
-
 #ifdef _64BIT
-    // TODO::
-    //return __builtin_clzll (bb);
-
+    return Square (__builtin_clzll (bb));
 #else
-
-    return Square (uint32_t (bb) ?
-        scan_lsb32 (uint32_t (bb)) :
-        scan_lsb32 (uint32_t (bb >> 32)) + 32);
-
+    return Square  (u32 (bb) ?
+        scan_lsb32 (u32 (bb      )) :
+        scan_lsb32 (u32 (bb >> 32)) + 32);
 #endif
 }
 
 INLINE Square scan_msq (Bitboard bb)
 {
 #ifdef _64BIT
-
     return Square (63 - __builtin_clzll (bb));
-
 #else
-
-    return Square (63 - (uint32_t (bb) ?
+    return Square (63 - (u32 (bb) ?
         __builtin_clz (bb) :
         __builtin_clz (bb >> 32) + 32));
-
 #endif
 }
 
@@ -111,99 +99,32 @@ INLINE Square scan_msq (Bitboard bb)
 // Assembly code by Heinz van Saanen
 INLINE Square scan_lsq (Bitboard bb)
 {
-    uint8_t index;
-    __asm__ ("bsfq %1, %0": "=r" (index) : "rm" (bb));
-    return Square (index);
+    Bitboard sq;
+    __asm__ ("bsfq %1, %0": "=r" (sq) : "rm" (bb));
+    return Square (sq);
 }
+
 INLINE Square scan_msq (Bitboard bb)
 {
-    uint8_t index;
-    __asm__ ("bsrq %1, %0": "=r" (index) : "rm" (bb));
-    return Square (index);
+    Bitboard sq;
+    __asm__ ("bsrq %1, %0": "=r" (sq) : "rm" (bb));
+    return Square (sq);
 }
 
 #   endif
 
-#else
+#else   // ifndef BSFQ
 
 INLINE Square  scan_lsq (Bitboard bb)
 {
 
-    // ---> (X & -X) == X & (~X + 1) != (X ^ (X - 1))
-    // two's complement (-X) and ones' decrement (X-1) are complement sets
-
 #ifdef _64BIT
 
-    //// Modulo operation of the isolated LS1B by the prime number 67.
-    //// The remainder 0..66 can be used to perfectly hash the bit - index table. Three gaps are 0, 17, and 34
-    //const uint8_t Prime_67 = 0x43; // 67
-    //CACHE_ALIGN(8)
-    //    const int8_t BSF_Table[Prime_67 + 1] =
-    //{
-    //    64, 00, 01, 39, 02, 15, 40, 23,
-    //    03, 12, 16, 59, 41, 19, 24, 54,
-    //    04, -1, 13, 10, 17, 62, 60, 28,
-    //    42, 30, 20, 51, 25, 44, 55, 47,
-    //    05, 32, -1, 38, 14, 22, 11, 58,
-    //    18, 53, 63,  9, 61, 27, 29, 50,
-    //    43, 46, 31, 37, 21, 57, 52,  8,
-    //    26, 49, 45, 36, 56, 07, 48, 35,
-    //    06, 34, 33, -1
-    //};
-    //uint64_t x = bb & -bb;  // isolated the LS1B
-    //uint8_t index = x % Prime_67;
-    //return Square (BSF_Table[index]);
-
-    //-- -
-
-    //// * DeBruijn (U32 (0x01)) = U64 (0X0218A392CD3D5DBF)
-    //if (!bb) return SQ_NO;
-    //CACHE_ALIGN(8)
-    //    const uint8_t BSF_Table[SQ_NO] =
-    //{
-    //    00, 01, 02, 07, 03, 13,  8, 19,
-    //    04, 25, 14, 28,  9, 34, 20, 40,
-    //    05, 17, 26, 38, 15, 46, 29, 48,
-    //    10, 31, 35, 54, 21, 50, 41, 57,
-    //    63, 06, 12, 18, 24, 27, 33, 39,
-    //    16, 37, 45, 47, 30, 53, 49, 56,
-    //    62, 11, 23, 32, 36, 44, 52, 55,
-    //    61, 22, 43, 51, 60, 42, 59, 58
-    //};
-    //const uint64_t DeBruijn_64 = U64 (0X0218A392CD3D5DBF);
-    //uint64_t x = bb & -bb;  // isolated the LS1B
-    //uint8_t index = (x * DeBruijn_64) >> 0x3A; // 58
-    //return Square (BSF_Table[index]);
-
-    //-- -
-
-    //// *@author Martin Läuter (1997), Charles E.Leiserson, Harald Prokop, Keith H.Randall
-    //// * DeBruijn (U32 (0x4000000)) = U64 (0X03F79D71B4CB0A89)
-    //if (!bb) return SQ_NO;
-    //CACHE_ALIGN(8)
-    //    const uint8_t BSF_Table[SQ_NO] =
-    //{
-    //    00, 01, 48, 02, 57, 49, 28, 03,
-    //    61, 58, 50, 42, 38, 29, 17, 04,
-    //    62, 55, 59, 36, 53, 51, 43, 22,
-    //    45, 39, 33, 30, 24, 18, 12, 05,
-    //    63, 47, 56, 27, 60, 41, 37, 16,
-    //    54, 35, 52, 21, 44, 32, 23, 11,
-    //    46, 26, 40, 15, 34, 20, 31, 10,
-    //    25, 14, 19,  9, 13,  8, 07, 06,
-    //};
-    //const uint64_t DeBruijn_64 = U64 (0X03F79D71B4CB0A89);
-    //uint64_t x = bb & -bb;  // isolated the LS1B
-    //uint8_t index = (x * DeBruijn_64) >> 0x3A; // 58
-    //return Square (BSF_Table[index]);
-
-    // ---
-
     // * @author Kim Walisch (2012)
-    // * DeBruijn(U32(0x4000000)) = U64(0X03F79D71B4CB0A89)
-    if (!bb) return SQ_NO;
+    // * DeBruijn(U32(0x4000000)) = U64 (0X03F79D71B4CB0A89)
+    if (bb == U64 (0)) return SQ_NO;
     CACHE_ALIGN(8)
-        const uint8_t BSF_Table[SQ_NO] =
+        const u08 BSF_Table[SQ_NO] =
     {
         00, 47, 01, 56, 48, 27, 02, 60,
         57, 49, 41, 37, 28, 16, 03, 61,
@@ -214,14 +135,15 @@ INLINE Square  scan_lsq (Bitboard bb)
         25, 39, 14, 33, 19, 30,  9, 24,
         13, 18,  8, 12, 07, 06, 05, 63
     };
-    const uint64_t DeBruijn_64 = U64 (0X03F79D71B4CB0A89);
-    uint64_t x = bb ^ (bb - 1); // set all bits including the LS1B and below
-    uint8_t index = (x * DeBruijn_64) >> 0x3A; // 58
+    const u64 DeBruijn_64 = U64 (0X03F79D71B4CB0A89);
+    u64 x = bb ^ (bb - 1); // set all bits including the LS1B and below
+    u08 index = (x * DeBruijn_64) >> 0x3A; // 58
     return Square (BSF_Table[index]);
 
 #else
+
     CACHE_ALIGN(8)
-        const uint8_t BSF_Table[SQ_NO] =
+        const u08 BSF_Table[SQ_NO] =
     {
         63, 30, 03, 32, 25, 41, 22, 33,
         15, 50, 42, 13, 11, 53, 19, 34,
@@ -233,10 +155,10 @@ INLINE Square  scan_lsq (Bitboard bb)
         38, 28, 58, 20, 37, 17, 36,  8
     };
     // Use Matt Taylor's folding trick for 32-bit
-    const uint32_t DeBruijn_32 = U32 (0x783A9B23);
-    uint64_t x = bb ^ (bb - 1);
-    uint32_t fold = uint32_t (x ^ (x >> 32));
-    uint8_t index = (fold * DeBruijn_32) >> 0x1A; // 26
+    const u32 DeBruijn_32 = U32 (0x783A9B23);
+    u64 x = bb ^ (bb - 1);
+    u32 fold = u32 (x ^ (x >> 32));
+    u08 index = (fold * DeBruijn_32) >> 0x1A; // 26
     return Square (BSF_Table[index]);
 
 #endif
@@ -249,10 +171,10 @@ inline Square  scan_msq (Bitboard bb)
 #ifdef _64BIT
 
     // * @authors Kim Walisch, Mark Dickinson (2012)
-    // * DeBruijn(U32(0x4000000)) = U64(0X03F79D71B4CB0A89)
-    if (!bb) return SQ_NO;
+    // * DeBruijn(U32(0x4000000)) = U64 (0X03F79D71B4CB0A89)
+    if (bb == U64 (0)) return SQ_NO;
     CACHE_ALIGN(8)
-        const uint8_t BSF_Table[SQ_NO] =
+        const u08 BSF_Table[SQ_NO] =
     {
         00, 47, 01, 56, 48, 27, 02, 60,
         57, 49, 41, 37, 28, 16, 03, 61,
@@ -264,7 +186,7 @@ inline Square  scan_msq (Bitboard bb)
         13, 18,  8, 12, 07, 06, 05, 63
     };
 
-    const uint64_t DeBruijn_64 = U64 (0X03F79D71B4CB0A89);
+    const u64 DeBruijn_64 = U64 (0X03F79D71B4CB0A89);
     // set all bits including the MS1B and below
     bb |= bb >> 0x01;
     bb |= bb >> 0x02;
@@ -273,13 +195,13 @@ inline Square  scan_msq (Bitboard bb)
     bb |= bb >> 0x10;
     bb |= bb >> 0x20;
 
-    uint8_t index = (bb * DeBruijn_64) >> 0x3A; // 58
+    u08 index = (bb * DeBruijn_64) >> 0x3A; // 58
     return (Square) BSF_Table[index];
 
 #else
 
     CACHE_ALIGN(8)
-        const uint8_t MSB_Table[_UI8_MAX + 1] =
+        const u08 MSB_Table[_UI8_MAX + 1] =
     {
         0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3,
         4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
@@ -299,28 +221,15 @@ inline Square  scan_msq (Bitboard bb)
         7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
     };
 
-    //uint16_t i = 0;
-    //uint8_t k = 0;
-    //while (i <= _UI8_MAX) // k < 8
-    //{
-    //    const uint8_t size = (2 << k);
-    //    while (i < size)
-    //    {
-    //        MSB_Table[i] = k;
-    //        ++i;
-    //    }
-    //    ++k;
-    //}
-
-    if (!bb) return SQ_NO;
-    uint8_t msb = 0;
+    if (bb == U64 (0)) return SQ_NO;
+    u08 msb = 0;
     if (bb > 0xFFFFFFFF)
     {
         bb >>= 32;
         msb = 32;
     }
 
-    uint32_t b = uint32_t (bb);
+    u32 b = u32 (bb);
     if (b > 0xFFFF)
     {
         b >>= 16;
@@ -340,13 +249,10 @@ inline Square  scan_msq (Bitboard bb)
 
 #endif
 
-//// scan_rel_lsq() finds least significant bit relative to the given color
-//INLINE Square scan_rel_lsq         (Color c, Bitboard bb) { return (WHITE == c) ? scan_lsq (bb) : scan_msq (bb); }
-
-// scan_rel_frntmost_sq() and scan_rel_backmost_sq() find the square
+// scan_frntmost_sq() and scan_backmost_sq() find the square
 // corresponding to the most/least advanced bit relative to the given color.
-INLINE Square scan_rel_frntmost_sq (Color c, Bitboard bb) { return (WHITE == c) ? scan_msq (bb) : scan_lsq (bb); }
-INLINE Square scan_rel_backmost_sq (Color c, Bitboard bb) { return (WHITE == c) ? scan_lsq (bb) : scan_msq (bb); }
+INLINE Square scan_frntmost_sq (Color c, Bitboard bb) { return (WHITE == c) ? scan_msq (bb) : scan_lsq (bb); }
+INLINE Square scan_backmost_sq (Color c, Bitboard bb) { return (WHITE == c) ? scan_lsq (bb) : scan_msq (bb); }
 
 INLINE Square pop_lsq (Bitboard &bb)
 {
@@ -355,22 +261,4 @@ INLINE Square pop_lsq (Bitboard &bb)
     return s;
 }
 
-//// b = [b0...b3]
-//uint32_t pack (uint8_t b0, uint8_t b1, uint8_t b2, uint8_t b3)
-//{
-//    uint32_t b;
-//    b = b0;
-//    b = (b << CHAR_BIT) | b1;
-//    b = (b << CHAR_BIT) | b2;
-//    b = (b << CHAR_BIT) | b3;
-//    return b;
-//}
-//// b = [b0...b3], k = [0...3]
-//uint8_t unpack (uint32_t b, uint8_t k)
-//{
-//    uint8_t  n    = k * CHAR_BIT;
-//    uint32_t mask = 0xFF << n;
-//    return (b & mask) >> n;
-//}
-
-#endif
+#endif // _BITSCAN_H_INC_

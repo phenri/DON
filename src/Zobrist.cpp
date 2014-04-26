@@ -3,50 +3,23 @@
 #include "Position.h"
 #include "RKISS.h"
 
+//Zobrist::Zob ZobRnd;
+const Zobrist::Zob &Zob = ZobPG; // Global Zobrist
+
 namespace Zobrist {
 
     using namespace std;
     using namespace BitBoard;
 
-    const Key MATL_KEY_PG = U64 (0xC1D58449E708A0AD);
-    const Key PAWN_KEY_PG = U64 (0x37FC40DA841E1692);
-    const Key POSI_KEY_PG = U64 (0x463B96181691FC9C);
+    RKISS   Rkiss;
+    Key     Exclusion;
 
-    RKISS   rkiss;
-    Key     exclusion;
-
-    void Zob::initialize (RKISS rkiss)
+    void Zob::initialize (RKISS &rk)
     {
-
-        //for (Color c = WHITE; c <= BLACK; ++c)
-        //{
-        //    for (PieceT pt = PAWN; pt <= KING; ++pt)
-        //    {
-        //        for (Square s = SQ_A1; s <= SQ_H8; ++s)
-        //        {
-        //            _.psq_k[c][pt][s] = rkiss.rand64();
-        //        }
-        //    }
-        //}
-        //for (File f = F_A; f <= F_H; ++f)
-        //{
-        //    _.en_passant[f] = rkiss.rand64();
-        //}
-        //for (Color c = WHITE; c <= BLACK; ++c)
-        //{
-        //    for (CSide cs = CS_K; cs <= CS_Q; ++cs)
-        //    {
-        //        _.castle_right[c][cs] = rkiss.rand64();
-        //    }
-        //}
-        //_.mover_side = rkiss.rand64();
-
-
-        for (uint16_t i = 0; i < SIZE_RANDOM; ++i)
+        for (u16 i = 0; i < ZOB_SIZE; ++i)
         {
-            random[i] = rkiss.rand64 ();
+            zobrist[i] = rk.rand64 ();
         }
-
     }
 
     // Hash key of the material situation.
@@ -54,13 +27,13 @@ namespace Zobrist {
     {
         Key matl_key = U64 (0);
 
-        for (Color c = WHITE; c <= BLACK; ++c)
+        for (i08 c = WHITE; c <= BLACK; ++c)
         {
-            for (PieceT pt = PAWN; pt <= QUEN; ++pt)
+            for (u08 pt = PAWN; pt <= KING; ++pt)
             {
-                for (int32_t pc = 0; pc < pos.count (c, pt); ++pc)
+                for (u08 pc = 0; pc < pos.count (Color (c), PieceT (pt)); ++pc)
                 {
-                    matl_key ^= _.psq_k[c][pt][pc];
+                    matl_key ^= _.piecesq[c][pt][pc];
                 }
             }
         }
@@ -72,23 +45,22 @@ namespace Zobrist {
     {
         Key pawn_key = U64 (0);
 
-        //Bitboard pawns = pos.pieces (PAWN);
+        //Bitboard pawns = pos.pieces<PAWN> ();
         //while (pawns)
         //{
         //    Square s = pop_lsq (pawns);
-        //    pawn_key ^= _.psq_k[_color (pos[s])][PAWN][s];
+        //    pawn_key ^= _.piecesq[color (pos[s])][PAWN][s];
         //}
 
-        for (Color c = WHITE; c <= BLACK; ++c)
+        for (i08 c = WHITE; c <= BLACK; ++c)
         {
-            const Square *pl = pos.list<PAWN> (c);
+            const Square *pl = pos.list<PAWN> (Color (c));
             Square s;
             while ((s = *pl++) != SQ_NO)
             {
-                pawn_key ^= _.psq_k[c][PAWN][s];
+                pawn_key ^= _.piecesq[c][PAWN][s];
             }
         }
-
 
         return pawn_key;
     }
@@ -97,210 +69,45 @@ namespace Zobrist {
     {
         Key posi_key = U64 (0);
 
-        //for (Square s = SQ_A1; s <= SQ_H8; ++s)
-        //{
-        //    Piece p = pos[s];
-        //    posi_key ^= _.psq_k[_color (p)][_ptype (p)][s];
-        //}
-
-        //for (Color c = WHITE; c <= BLACK; ++c)
-        //{
-        //    for (PieceT pt = PAWN; pt <= KING; ++pt)
-        //    {
-        //        vector<Square> sq_lst = squares (pos[c] & pos[pt]);
-        //        for (int32_t pc = 0; pc < sq_lst.size (); ++pc)
-        //        {
-        //            Square s = sq_lst[pc];
-        //            posi_key ^= _.psq_k[c][pt][s];
-        //        }
-        //    }
-        //}
-
         //Bitboard occ = pos.pieces ();
-        //while (occ)
+        //while (occ != U64 (0))
         //{
         //    Square s = pop_lsq (occ);
         //    Piece p = pos[s];
-        //    posi_key ^= _.psq_k[_color (p)][_ptype (p)][s];
+        //    posi_key ^= _.piecesq[color (p)][ptype (p)][s];
         //}
 
-        for (Color c = WHITE; c <= BLACK; ++c)
+        for (i08 c = WHITE; c <= BLACK; ++c)
         {
-            for (PieceT pt = PAWN; pt <= KING; ++pt)
+            for (u08 pt = PAWN; pt <= KING; ++pt)
             {
-                const Square *pl = pos[(c | pt)];
+                const Square *pl = pos[(Color (c) | PieceT (pt))];
                 Square s;
                 while ((s = *pl++) != SQ_NO)
                 {
-                    posi_key ^= _.psq_k[c][pt][s];
+                    posi_key ^= _.piecesq[c][pt][s];
                 }
             }
         }
 
-        //if (pos.can_castle (CR_A))
-        //{
-        //    for (Color c = WHITE; c <= BLACK; ++c)
-        //    {
-        //        if (pos.can_castle (c))
-        //        {
-        //            for (CSide cs = CS_K; cs <= CS_Q; ++cs)
-        //            {
-        //                if (pos.can_castle (c, cs)) posi_key ^= _.castle_right[c][cs];
-        //            }
-        //        }
-        //    }
-        //}
         Bitboard b = pos.castle_rights ();
-        while (b) posi_key ^= _.castle_right[0][pop_lsq (b)];
+        while (b != U64 (0))
+        {
+            posi_key ^= _.castle_right[0][pop_lsq (b)];
+        }
 
-        Square ep_sq = pos.en_passant ();
-        if (SQ_NO != ep_sq) posi_key ^= _.en_passant[_file (ep_sq)];
-
-        if (WHITE == pos.active ()) posi_key ^= _.mover_side;
+        Square ep_sq = pos.en_passant_sq ();
+        if (SQ_NO != ep_sq)
+        {
+            posi_key ^= _.en_passant[_file (ep_sq)];
+        }
+        if (WHITE == pos.active ())
+        {
+            posi_key ^= _.mover_side;
+        }
 
         return posi_key;
     }
-
-#ifndef NDEBUG
-    // Hash key of the FEN
-    Key Zob::compute_fen_key (const   char *fen, bool c960) const
-    {
-        if (!fen)   return U64 (0);
-
-        Key fen_key = U64 (0);
-        File king[CLR_NO] = {F_NO};
-
-#undef skip_whitespace
-#undef get_next
-
-#define skip_whitespace()  while (isspace (unsigned char (*fen))) ++fen
-#define get_next()         ch = unsigned char (*fen++)
-
-        unsigned char ch;
-        for (Rank r = R_8; r >= R_1; --r)
-        {
-            File f = F_A;
-            while (f <= F_H)
-            {
-                ch = *fen++;
-                if (!ch) return U64 (0);
-
-                if      (isdigit (ch))
-                {
-                    // empty square(s)
-                    if ('1' > ch || ch > '8') return U64 (0);
-
-                    uint8_t empty = (ch - '0');
-                    f += empty;
-
-                    if (f > F_NO) return U64 (0);
-                }
-                else if (isalpha (ch))
-                {
-                    uint32_t idx = CharPiece.find (ch);
-                    if (idx != string::npos)
-                    {
-                        Piece p = Piece (idx);
-                        if (EMPTY == p) return U64 (0);
-                        if (KING == _ptype (p))  king[_color (p)] = f;
-
-                        fen_key ^= _.psq_k[_color (p)][_ptype (p)][(f | r)];
-                    }
-                    ++f;
-                }
-                else
-                {
-                    return U64 (0);
-                }
-            }
-            if (r > R_1)
-            {
-                ch = *fen++;
-                if ('/' != ch) return U64 (0);
-            }
-        }
-        skip_whitespace ();
-        char active = get_next ();
-        if ('w' == active) fen_key ^= _.mover_side;
-
-        skip_whitespace ();
-        // 3. Castling availability
-        // Compatible with 3 standards:
-        // * Normal FEN standard,
-        // * Shredder-FEN that uses the letters of the columns on which the rooks began the game instead of KQkq
-        // * X-FEN standard that, in case of Chess960, if an inner rook is associated with the castling right, the castling
-        // tag is replaced by the file letter of the involved rook, as for the Shredder-FEN.
-        get_next ();
-        if ('-' != ch)
-        {
-            if (c960)
-            {
-                do
-                {
-                    Color c = isupper (ch) ? WHITE : BLACK;
-                    char sym = tolower (ch);
-                    if ('a' <= sym && sym <= 'h')
-                    {
-                        fen_key ^= _.castle_right[c][(king[c] < to_file (sym)) ? CS_K : CS_Q];
-                    }
-                    else
-                    {
-                        return U64 (0);
-                    }
-
-                    get_next ();
-                }
-                while (ch && !isspace (ch));
-            }
-            else
-            {
-                do
-                {
-                    //switch (ch)
-                    //{
-                    //case 'K': fen_key ^= _.castle_right[WHITE][CS_K]; break;
-                    //case 'Q': fen_key ^= _.castle_right[WHITE][CS_Q]; break;
-                    //case 'k': fen_key ^= _.castle_right[BLACK][CS_K]; break;
-                    //case 'q': fen_key ^= _.castle_right[BLACK][CS_Q]; break;
-                    //default:  return U64(0); break;
-                    //}
-
-                    Color c = isupper (ch) ? WHITE : BLACK;
-                    switch (toupper (ch))
-                    {
-                    case 'K': fen_key ^= _.castle_right[c][CS_K]; break;
-                    case 'Q': fen_key ^= _.castle_right[c][CS_Q]; break;
-                    default:  return U64 (0); break;
-                    }
-
-                    get_next ();
-                }
-                while (ch && !isspace (ch));
-            }
-        }
-
-        skip_whitespace ();
-        get_next ();
-        if ('-' != ch)
-        {
-            unsigned char ep_f = tolower (ch);
-            if (!isalpha (ep_f)) return U64 (0);
-            if ('a' > ep_f || ep_f > 'h') return U64 (0);
-
-            unsigned char ep_r = get_next ();
-            if (!isdigit (ep_r)) return U64 (0);
-            if (('w' == active && '6' != ep_r) ||
-                ('b' == active && '3' != ep_r)) return U64 (0);
-
-            fen_key ^= _.en_passant[to_file (ep_f)];
-        }
-
-#undef skip_whitespace
-#undef get_next
-
-        return fen_key;
-    }
-#endif
 
     // Hash key of the FEN
     Key Zob::compute_fen_key (const string &fen, bool c960) const
@@ -309,23 +116,24 @@ namespace Zobrist {
         Key fen_key = U64 (0);
         File king[CLR_NO] = {F_NO};
 
-        istringstream sfen (fen);
-        uint8_t ch;
+        istringstream iss (fen);
+        u08 ch;
 
-        sfen >> noskipws;
+        iss >> noskipws;
 
-        uint32_t idx;
+        size_t idx;
         Square s = SQ_A8;
-        while ((sfen >> ch) && !isspace (ch))
+        while ((iss >> ch) && !isspace (ch))
         {
             if (isdigit (ch))
             {
                 s += Delta (ch - '0'); // Advance the given number of files
             }
-            else if (isalpha (ch) && (idx = CharPiece.find (ch)) != string::npos)
+            else if (isalpha (ch) && (idx = PieceChar.find (ch)) != string::npos)
             {
                 Piece p = Piece (idx);
-                fen_key ^= _.psq_k[_color (p)][_ptype (p)][s];
+                if (KING == ptype (p))  king[color (p)] = _file (s);
+                fen_key ^= _.piecesq[color (p)][ptype (p)][s];
                 ++s;
             }
             else if (ch == '/')
@@ -334,16 +142,16 @@ namespace Zobrist {
             }
         }
 
-        sfen >> ch;
+        iss >> ch;
         if ('w' == ch) fen_key ^= _.mover_side;
 
-        sfen >> ch;
+        iss >> ch;
         if (c960)
         {
-            while ((sfen >> ch) && !isspace (ch))
+            while ((iss >> ch) && !isspace (ch))
             {
                 Color c = isupper (ch) ? WHITE : BLACK;
-                uint8_t sym = tolower (ch);
+                u08 sym = tolower (ch);
                 if ('a' <= sym && sym <= 'h')
                 {
                     fen_key ^= _.castle_right[c][(king[c] < to_file (sym)) ? CS_K : CS_Q];
@@ -356,21 +164,21 @@ namespace Zobrist {
         }
         else
         {
-            while ((sfen >> ch) && !isspace (ch))
+            while ((iss >> ch) && !isspace (ch))
             {
                 Color c = isupper (ch) ? WHITE : BLACK;
                 switch (toupper (ch))
                 {
                 case 'K': fen_key ^= _.castle_right[c][CS_K]; break;
                 case 'Q': fen_key ^= _.castle_right[c][CS_Q]; break;
-                default : return U64 (0); break;
+                default : break;
                 }
             }
         }
 
-        uint8_t col, row;
-        if (   ((sfen >> col) && (col >= 'a' && col <= 'h'))
-            && ((sfen >> row) && (row == '3' || row == '6')))
+        u08 col, row;
+        if (   ((iss >> col) && (col >= 'a' && col <= 'h'))
+            && ((iss >> row) && (row == '3' || row == '6')))
         {
             fen_key ^= _.en_passant[to_file (col)];
         }
@@ -380,9 +188,9 @@ namespace Zobrist {
 
     void initialize ()
     {
-        //ZobRand.initialize (rkiss);
+        //ZobRnd.initialize (rkiss);
 
-        exclusion = rkiss.rand64 ();
+        Exclusion = Rkiss.rand64 ();
     }
 
 }
@@ -618,9 +426,3 @@ const Zobrist::Zob ZobPG =
     U64 (0xF8D626AAAF278509)
 
 };
-
-//Zobrist::Zob ZobRand;
-
-const Zobrist::Zob &ZobGlob =
-    //ZobRand;
-    ZobPG;

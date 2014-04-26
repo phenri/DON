@@ -1,6 +1,9 @@
-//#pragma once
-#ifndef MANIPULATOR_H_
-#define MANIPULATOR_H_
+#ifdef _MSC_VER
+#   pragma once
+#endif
+
+#ifndef _MANIPULATOR_H_INC_
+#define _MANIPULATOR_H_INC_
 
 #include <iostream>
 
@@ -48,9 +51,10 @@ namespace std {
     class manip_infra
     {
 
-    private:                      
-        T _val;
+    private:
+
         basic_ostream<C>& (*_fp_manip) (basic_ostream<C>&, T);
+        T       _val;
 
     public:
         manip_infra (basic_ostream<C>& (*fp_manip) (basic_ostream<C>&, T), T val)
@@ -117,4 +121,4 @@ namespace std {
 
 }
 
-#endif
+#endif // _MANIPULATOR_H_INC_

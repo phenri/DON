@@ -1,16 +1,22 @@
-//#pragma once
-#ifndef XSTRING_H_
-#define XSTRING_H_
+#ifdef _MSC_VER
+#   pragma once
+#endif
+
+#ifndef _XSTRING_H_INC_
+#define _XSTRING_H_INC_
 
 #include <cctype>
+#include <cstring>
 #include <string>
 #include <vector>
 #include <algorithm>
 #include <functional>
-
+#include <sstream>
 //#include <unordered_set>
 //#include <sstream>  // stringstream in trim
 //#include <stack>    // stack<> in reverse
+
+#include "Platform.h"
 
 namespace std {
 
@@ -19,64 +25,77 @@ namespace std {
         if (s.empty ()) return true;
         for (size_t i = 0; i < s.length (); ++i)
         {
-            if (!isspace ((unsigned char) (s[i]))) return false;
+            if (!isspace (s[i])) return false;
         }
         return true;
     }
 
-    inline std::string& to_lower (std::string &s)
-    {
-        std::transform (s.begin (), s.end (), s.begin (), ::tolower);
-        return s;
-    }
-    inline std::string& to_upper (std::string &s)
-    {
-        std::transform (s.begin (), s.end (), s.begin (), ::toupper);
-        return s;
-    }
+    //inline std::string& strlower (std::string &s)
+    //{
+    //    //std::transform (s.begin (), s.end (), std::back_inserter (s), ::tolower);
+    //    std::transform (s.begin (), s.end (), s.begin (), ::tolower);
+    //    return s;
+    //}
+    //inline std::string& strupper (std::string &s)
+    //{
+    //    //std::transform (s.begin (), s.end (), std::back_inserter (s), ::toupper);
+    //    std::transform (s.begin (), s.end (), s.begin (), ::toupper);
+    //    return s;
+    //}
+
+    //inline char toggle_c (char c)
+    //{
+    //    return char (islower (c) ? toupper (c) : tolower (c));
+    //}
 
     inline std::string& toggle (std::string &s)
     {
-        transform (s.begin (), s.end (), s.begin (), [] (char c)
+        //transform (s.begin (), s.end (), s.begin (), toggle_c);
+
+        transform (s.begin (), s.end (), s.begin (), [] (char c)->char
         {
             return char (islower (c) ? toupper (c) : tolower (c));
         });
+
         return s;
     }
+
+    // char case-sensitive equals
+    //inline bool equals_c (char c1, char c2) { return (c1 == c2); }
 
     // string case-sensitive equals
     inline bool  equals (const std::string &s1, const std::string &s2)
     {
         //return !strcmp(s1.c_str (), s2.c_str ());
+
         return (s1 == s2);
     }
     // string case-insensitive equals
     inline bool iequals (const std::string &s1, const std::string &s2)
     {
-        //to_lower (const_cast<string&> (s1)); //to_upper ();
-        //to_lower (const_cast<string&> (s2)); //to_upper ();
+        //strlower (const_cast<string&> (s1)); //strupper ();
+        //strlower (const_cast<string&> (s2)); //strupper ();
         //return (s1 == s2);
 
         //return !stricmp (s1.c_str (), s2.c_str ());
 
-        return (s1.size () == s2.size ()) && std::equal (s1.begin (), s1.end (), s2.begin ());
-        return (s1.size () == s2.size ()) &&
-            std::equal (s1.begin (), s1.end (), s2.begin (), [] (char c1, char c2)->bool
+        //return s1.size () == s2.size ()
+        //    && std::equal (s1.begin (), s1.end (), s2.begin (), equals_c);
+
+        return s1.size () == s2.size ()
+            && std::equal (s1.begin (), s1.end (), s2.begin (), [] (char c1, char c2)->bool
         {
             return toupper (c1) == toupper (c2);
         });
-    }
 
-    // char case-sensitive equals
-    inline bool equals (int c1, int c2)     { return (c1 == c2); }
-    //inline bool notequals (int c1, int c2)  { return (c1 != c2); }
+    }
 
     // trim from head
     inline std::string& ltrim (std::string &s, char c = ' ')
     {
         //s.erase (s.begin (),
         //    std::find_if (s.begin (), s.end (),
-        //    std::not1 (std::bind2nd (std::ptr_fun<int, int, bool> (equals), c))));
+        //    std::not1 (std::bind2nd (std::ptr_fun<char, char, bool> (equals_c), c))));
 
         s.erase (s.begin (), std::find_if (s.begin (), s.end (), [&] (char ch)->bool { return (ch != c); }));
 
@@ -86,7 +105,7 @@ namespace std {
     inline std::string& rtrim (std::string &s, char c = ' ')
     {
         //s.erase (std::find_if (s.rbegin (), s.rend (),
-        //    std::not1 (std::bind2nd (std::ptr_fun<int, int, bool> (equals), c))).base (),
+        //    std::not1 (std::bind2nd (std::ptr_fun<char, char, bool> (equals_c), c))).base (),
         //    s.end ());
 
         s.erase (std::find_if (s.rbegin (), s.rend (), [&] (char ch)->bool { return (ch != c); }).base (), s.end ());
@@ -163,7 +182,7 @@ namespace std {
         return s;
     }
 
-    inline std::string& remove_substring (std::string &s, const std::string &sub)
+    inline std::string& remove_substr (std::string &s, const std::string &sub)
     {
         const size_t length = sub.length ();
         if (0 < length)
@@ -215,9 +234,9 @@ namespace std {
         return count;
     }
 
-    inline std::vector<std::string> str_splits (const std::string &s, char delim = ' ', bool keep_empty = false, bool trim_entry = false)
+    inline std::vector<std::string> strsplit (const std::string &s, char delim = ' ', bool keep_empty = false, bool trim_entry = false)
     {
-        std::vector<std::string> s_list;
+        std::vector<std::string> split;
 
         //std::istringstream iss (s);
         //std::string part;
@@ -232,7 +251,7 @@ namespace std {
         //    }
         //    if (keep_empty || !empty (part))
         //    {
-        //        s_list.push_back (part);
+        //        split.push_back (part);
         //    }
         //}
         //while (success && iss.good ());
@@ -249,7 +268,7 @@ namespace std {
         //    }
         //    if (keep_empty || !empty (part))
         //    {
-        //        s_list.push_back (part);
+        //        split.push_back (part);
         //    }
         //    if (cmid == end) break;
         //    cbeg = cmid + 1;
@@ -268,7 +287,7 @@ namespace std {
         //    }
         //    if (keep_empty || !empty (part))
         //    {
-        //        s_list.push_back (part);
+        //        split.push_back (part);
         //    }
         //    if (std::string::npos == p1) break;
         //    dup = dup.substr (p1 + 1);
@@ -288,18 +307,58 @@ namespace std {
             }
             if (keep_empty || !part.empty ())
             {
-                s_list.push_back (part);
+                split.push_back (part);
             }
             if (std::string::npos == p1) break;
             ++p1;
         }
 
-        return s_list;
+        return split;
     }
 
-    //inline int to_int (const std::string &s)
+    inline std::vector<std::string> strsplit (const std::string &s, const std::string &delim)
+    {
+        std::vector<std::string> split;
+        std::string::size_type beg = 0;
+        std::string::size_type end = 0;
+        while (end != std::string::npos)
+        {
+            end = s.find (delim, beg);
+            if (beg < s.size () && beg != end)
+            {
+                split.push_back (s.substr (beg, end - beg));
+            }
+            beg = end + delim.size ();
+        }
+        return split;
+    }
+    
+    template <class T>
+    // If we have a space as delimiter, we can split string more efficient way and even make use of templates too
+    inline std::vector<T> strsplit (const std::string &s)
+    {
+        std::vector<T> split;
+        std::istringstream iss (s);
+        copy (std::istream_iterator<T> (ss), std::istream_iterator<T> (), back_inserter (split));
+        return split;
+    }
+
+    template <class T>
+    inline std::string vecjoin (const std::vector<T> &v, const std::string &delim)
+    {
+        std::ostringstream join;
+        for (typename std::vector<T>::const_iterator itr = v.begin (); itr != v.end (); ++itr)
+        {
+            if (itr != v.begin ()) join << delim;
+            join << *itr;
+        }
+        return join.str ();
+    }
+
+    //inline i32 to_int (const std::string &s)
     //{
-    //    return std::stoi (s, NULL, 10);
+    //    //return std::stoi (s, NULL, 10);
+    //    return atoi (s.c_str() );
     //}
 
     //inline size_t find_sep_fn (const std::string &path)
@@ -318,4 +377,4 @@ namespace std {
 
 }
 
-#endif
+#endif // _XSTRING_H_INC_
